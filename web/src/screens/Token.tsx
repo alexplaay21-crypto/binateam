@@ -7,13 +7,14 @@ import { Logo } from '../components/Logo';
 import { TokenName } from '../components/TokenRow';
 import { pickPhoto } from '../components/photo';
 import { UserName } from '../components/User';
+import { useFlash } from '../components/Avatar';
 
-const TFS: [string, string][] = [['5m', '5м'], ['1h', '1ч'], ['4h', '4ч'], ['1d', '1д'], ['7d', '7д']];
-const REFRESH_MS = 15_000;
+export const TFS: [string, string][] = [['1m', '1м'], ['5m', '5м'], ['15m', '15м'], ['1h', '1ч'], ['4h', '4ч'], ['1d', '1д']];
+const REFRESH_MS = 5_000;
 
 export function Token({ id, nav }: { id: number; nav: Nav }) {
   const [d, setD] = useState<any>(null);
-  const [tf, setTf] = useState('1h');
+  const [tf, setTf] = useState('1m');
   const [err, setErr] = useState('');
   const tfRef = useRef(tf);
   tfRef.current = tf;
@@ -24,7 +25,8 @@ export function Token({ id, nav }: { id: number; nav: Nav }) {
     return () => clearInterval(h);
   }, [load]);
   const after = () => { load(); nav.reloadMe(); };
-  if (!d) return <div className="loading">{err || 'Загрузка…'}</div>;
+  const flash = useFlash(d?.token?.last_price);
+  if (!d) return err ? <div className="loading">{err}</div> : <><div className="skeleton" style={{ height: 80 }} /><div className="skeleton" style={{ height: 280 }} /></>;
   const t = d.token;
   const mine = d.position.balance;
   return (
@@ -39,9 +41,9 @@ export function Token({ id, nav }: { id: number; nav: Nav }) {
       </div>
 
       <div className="card">
-        <div className="big num">{bc(t.last_price)} <span className="hint" style={{ fontSize: 16 }}>BC</span></div>
+        <div className={'big num ' + flash}>{bc(t.last_price)} <span className="hint" style={{ fontSize: 16 }}>BC</span></div>
         <div className="hint small">цена за 1 токен · за 24 ч {pct(t.change_bps)}</div>
-        <div style={{ margin: '12px 0 6px' }}><CandleChart candles={d.candles} height={180} /></div>
+        <div style={{ margin: '12px 0 6px' }}><CandleChart candles={d.candles} height={200} /></div>
         <div className="chips">{TFS.map(([k, l]) => <button key={k} className={tf === k ? 'on' : ''} onClick={() => setTf(k)}>{l}</button>)}</div>
       </div>
 
@@ -74,7 +76,6 @@ export function Token({ id, nav }: { id: number; nav: Nav }) {
       {t.description && <div className="card"><h3>О токене</h3><div style={{ whiteSpace: 'pre-wrap' }}>{t.description}</div></div>}
       <Promote d={d} nav={nav} after={after} />
       {t.creator_id === nav.me.user.id && <OwnerTools d={d} after={after} />}
-      {nav.me.user.is_admin && <AdminTools d={d} after={after} />}
       <div className="notice">Виртуальный токен Bina Play. Не связан с реальными проектами и активами с похожим названием, не имеет реальной стоимости.</div>
     </>
   );
@@ -101,7 +102,7 @@ function Trade({ d, after }: { d: any; after: () => void }) {
   if (side === 'buy' && amount && amount > free) problem = 'Недостаточно BC';
   else if (side === 'buy' && amount && amount > L.max_buy_bc) problem = `За одну сделку — до ${bc(L.max_buy_bc)} BC (цена меняется не больше чем на 5%)`;
   else if (side === 'sell' && amount && amount > freeTok) problem = 'Недостаточно свободных токенов';
-  else if (side === 'sell' && amount && amount > L.max_sell_qty) problem = `За одну сделку — до ${qty(L.max_sell_qty)} шт (цена меняется не больше чем на 5%)`;
+  else if (side === 'sell' && amount && amount > L.max_sell_qty) problem = `Сейчас можно продать до ${qty(L.max_sell_qty)} шт: в пуле ${bc(L.pool_bc)} BC от покупателей, и цена за сделку меняется не больше чем на 5%`;
   else if (d.trading_open) problem = 'У вас открыта сделка в трейдинге по этому токену — дождитесь итога';
   else if (q?.error) problem = errorText({ code: q.error } as any);
   const go = async () => {
@@ -128,7 +129,7 @@ function Trade({ d, after }: { d: any; after: () => void }) {
         <label>{side === 'buy' ? 'Сколько BC потратить' : `Сколько $${t.ticker} продать`}</label>
         <div className="input"><input inputMode={side === 'buy' ? 'decimal' : 'numeric'} placeholder="0" value={val} onChange={(e) => setVal(e.target.value)} />
           <span>{side === 'buy' ? 'BC' : 'шт'}</span></div>
-        <span className="hint small num">Доступно: {side === 'buy' ? `${bc(free)} BC` : `${qty(freeTok)} шт`}</span>
+        <span className="hint small num">Доступно: {side === 'buy' ? `${bc(free)} BC` : `${qty(freeTok)} шт · в пуле ${bc(L.pool_bc)} BC`}</span>
       </div>
       <div className="chips" style={{ marginBottom: 12 }}>
         {chips.map(([l, v]) => <button key={l} onClick={() => setVal(side === 'buy' ? String(Math.floor(v / UBC * 100) / 100).replace('.', ',') : String(v))}>{l}</button>)}
@@ -196,35 +197,6 @@ function OwnerTools({ d, after }: { d: any; after: () => void }) {
         <div className="row"><div className="input" style={{ flex: 1 }}><input placeholder="@username или ID" value={to} onChange={(e) => setTo(e.target.value)} /></div>
           <button className="btn sm" style={{ padding: '12px 14px' }} disabled={!to.trim()} onClick={give}>Передать</button></div>
         <span className="hint small">Токены у вас остаются, переходит только управление (фото, права).</span></div>
-    </div>
-  );
-}
-
-function AdminTools({ d, after }: { d: any; after: () => void }) {
-  const t = d.token;
-  const act = (a: string, label: string, value?: number) => {
-    const run = async () => {
-      try { await call('app_admin', { action: 'act', act: a, target: t.id, value, reason: label, clientId: clientId() }); haptic('success'); after(); } catch (e) { notify(errorText(e)); }
-    };
-    if (tg?.showConfirm) tg.showConfirm(`${label}: $${t.ticker}?`, (ok: boolean) => { if (ok) run(); });
-    else run();
-  };
-  const makePool = () => {
-    const v = prompt('Сколько токенов создателя положить в пул? Стартовая цена — текущая.', '');
-    const n = v ? parseInt10(v) : null;
-    if (n) act('token_pool', `Создать пул из ${n} шт`, n);
-  };
-  return (
-    <div className="card">
-      <h3>Администратор</h3>
-      <div className="grid2">
-        <button className="btn ghost sm" onClick={() => act(t.is_verified ? 'token_unverify' : 'token_verify', t.is_verified ? 'Снять подтверждение' : 'Подтвердить')}>{t.is_verified ? 'Снять ✓' : 'Подтвердить ✓'}</button>
-        {!d.pool && <button className="btn ghost sm" onClick={makePool}>Создать пул</button>}
-        <button className="btn ghost sm" onClick={() => act(t.trading_off ? 'token_trading_on' : 'token_trading_off', t.trading_off ? 'Включить трейдинг' : 'Выключить трейдинг')}>{t.trading_off ? 'Вкл. трейдинг' : 'Выкл. трейдинг'}</button>
-        <button className="btn ghost sm" onClick={() => act('token_unlock', 'Снять блокировку резерва')}>Снять lock-up</button>
-        {t.logo_v > 0 && <button className="btn ghost sm" onClick={() => act('token_logo_remove', 'Удалить фото')}>Удалить фото</button>}
-        <button className="btn danger sm" onClick={() => act(t.is_hidden ? 'token_unhide' : 'token_hide', t.is_hidden ? 'Показать токен' : 'Скрыть токен')}>{t.is_hidden ? 'Показать' : 'Скрыть'}</button>
-      </div>
     </div>
   );
 }

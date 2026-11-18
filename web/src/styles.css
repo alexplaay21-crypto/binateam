@@ -188,3 +188,84 @@ button { cursor: pointer; }
 .vipbg { background: linear-gradient(135deg, rgba(245, 197, 66, .22), rgba(228, 95, 162, .18) 50%, rgba(124, 92, 255, .22)), var(--glass); }
 .vipbg::after { background: radial-gradient(circle, rgba(245, 197, 66, .45), transparent 70%); }
 .vipcard { background: linear-gradient(135deg, rgba(245, 197, 66, .25), rgba(228, 95, 162, .2)), var(--glass); }
+
+/* ===================== Анимации и эффекты ===================== */
+@keyframes drift1 { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(6vw, 4vh) scale(1.12); } 100% { transform: translate(-4vw, 8vh) scale(.95); } }
+@keyframes drift2 { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-8vw, -3vh) scale(1.1); } 100% { transform: translate(5vw, -6vh) scale(1.05); } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes shine { 0% { transform: translateX(-120%) skewX(-20deg); } 60%, 100% { transform: translateX(220%) skewX(-20deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulseGlow { 0%, 100% { opacity: .55; filter: blur(6px); } 50% { opacity: 1; filter: blur(10px); } }
+@keyframes flashUp { 0% { background: var(--up-bg); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: var(--down-bg); } 100% { background: transparent; } }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes bgmove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes twinkle { 0%, 100% { opacity: .25; } 50% { opacity: .9; } }
+@keyframes pop { 0% { transform: scale(.6); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+
+body::before { display: none; }
+.ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.ambient i { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .9; }
+.ambient i:nth-child(1) { width: 70vmax; height: 70vmax; left: -25vmax; top: -30vmax; background: var(--blob-1); animation: drift1 22s ease-in-out infinite alternate; }
+.ambient i:nth-child(2) { width: 60vmax; height: 60vmax; right: -25vmax; top: 20vh; background: var(--blob-2); animation: drift2 26s ease-in-out infinite alternate; }
+.ambient i:nth-child(3) { width: 65vmax; height: 65vmax; left: -15vmax; bottom: -35vmax; background: var(--blob-3); animation: drift1 30s ease-in-out infinite alternate-reverse; }
+.ambient b { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; animation: twinkle 3s ease-in-out infinite; }
+:root:not([data-theme="dark"]) .ambient b { display: none; }
+
+.app > * { animation: rise .45s cubic-bezier(.2, .8, .2, 1) both; }
+.app > *:nth-child(2) { animation-delay: .04s; } .app > *:nth-child(3) { animation-delay: .08s; }
+.app > *:nth-child(4) { animation-delay: .12s; } .app > *:nth-child(5) { animation-delay: .16s; }
+.app > *:nth-child(6) { animation-delay: .2s; } .app > *:nth-child(n+7) { animation-delay: .24s; }
+.list > .trow { transition: transform .15s, background .2s; border-radius: 12px; }
+.list > .trow:active { transform: scale(.985); background: var(--field); }
+
+.btn { position: relative; overflow: hidden; }
+.btn:not(.ghost):not(.danger)::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: shine 3.6s ease-in-out infinite; pointer-events: none; }
+.btn:disabled::after { display: none; }
+.tile { transition: transform .15s, border-color .2s, box-shadow .2s; }
+.tile:active { transform: scale(.97); }
+.tile.on { box-shadow: 0 0 0 1px var(--accent), 0 6px 22px color-mix(in srgb, var(--accent) 25%, transparent); }
+.flash-up { animation: flashUp 1.2s ease-out; border-radius: 10px; }
+.flash-down { animation: flashDown 1.2s ease-out; border-radius: 10px; }
+.skeleton { height: 64px; border-radius: 16px; margin-bottom: 12px;
+  background: linear-gradient(90deg, var(--field) 25%, var(--glass-strong) 50%, var(--field) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.medal { animation: pop .5s ease-out both; }
+
+/* ===================== Аватарки и рамки ===================== */
+.ava { position: relative; display: inline-grid; place-items: center; flex: none; border-radius: 50%; }
+.ava .face { position: relative; z-index: 2; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: grid; place-items: center;
+  font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); overflow: hidden; }
+.ava .ring { position: absolute; inset: -3px; z-index: 1; border-radius: 50%; padding: 0; background: linear-gradient(135deg, var(--fa), var(--fb)); }
+.ava .ring::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--bg); }
+.ava.spin .ring { background: conic-gradient(var(--fa), var(--fb), var(--fc, var(--fa)), var(--fa)); animation: spin 3s linear infinite; }
+.ava.glow::before { content: ""; position: absolute; inset: -6px; z-index: 0; border-radius: 50%; background: linear-gradient(135deg, var(--fa), var(--fb)); animation: pulseGlow 2.4s ease-in-out infinite; }
+.ava.pulse .ring { animation: pulseGlow 2s ease-in-out infinite; filter: none; }
+.ava .crown { position: absolute; z-index: 3; top: -14%; right: -10%; font-size: 1em; transform: rotate(18deg); filter: drop-shadow(0 2px 3px rgba(0,0,0,.4)); }
+
+/* ===================== Фоны профиля ===================== */
+.pbg { position: relative; overflow: hidden; }
+.pbg > * { position: relative; z-index: 1; }
+.pbg::before { content: ""; position: absolute; inset: 0; z-index: 0; opacity: .85; background-size: 300% 300%; animation: bgmove 14s ease infinite; }
+.pbg-galaxy::before { background-image: radial-gradient(circle at 20% 30%, rgba(255,255,255,.5) 0 1px, transparent 2px), radial-gradient(circle at 70% 60%, rgba(255,255,255,.4) 0 1px, transparent 2px),
+  radial-gradient(circle at 40% 80%, rgba(255,255,255,.5) 0 1px, transparent 2px), linear-gradient(135deg, #1a0b3d, #3b1f7a, #0b1d4d, #5b2a86); background-size: 120px 120px, 90px 90px, 150px 150px, 300% 300%; }
+.pbg-aurora::before { background-image: linear-gradient(120deg, #0b3d2e, #1fd1a0, #2b6cff, #7c5cff, #0b3d2e); }
+.pbg-sunset::before { background-image: linear-gradient(120deg, #ff7a59, #ff3d7f, #7c3aed, #f59e0b, #ff7a59); }
+.pbg-ocean::before { background-image: linear-gradient(120deg, #021b3a, #0ea5e9, #1e3a8a, #06b6d4, #021b3a); }
+.pbg-matrix::before { background-image: repeating-linear-gradient(90deg, rgba(34,197,94,.25) 0 2px, transparent 2px 14px), linear-gradient(180deg, #021a0a, #0b3d1a, #021a0a); background-size: 14px 100%, 100% 300%; }
+.pbg-gold::before { background-image: linear-gradient(120deg, #3d2a05, #f5c542, #a16207, #fde68a, #3d2a05); }
+.pbg-vip::before { background-image: linear-gradient(120deg, rgba(245,197,66,.55), rgba(228,95,162,.5), rgba(124,92,255,.55), rgba(245,197,66,.55)); }
+.pbg .hint { color: rgba(255,255,255,.78); }
+.pbg .mid, .pbg .big { color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.35); }
+.swatch.bgsw { position: relative; overflow: hidden; }
+
+/* ===================== Топ ===================== */
+.podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 8px; align-items: end; margin-bottom: 12px; }
+.podium .pl { text-align: center; padding: 12px 6px; border-radius: 18px; background: var(--glass); border: 1px solid var(--rim); }
+.podium .pl.p1 { padding-top: 18px; box-shadow: 0 10px 30px rgba(245, 197, 66, .2); }
+.podium .medal { font-size: 22px; display: block; margin-bottom: 4px; }
+.podium .nm { font-weight: 700; font-size: 13px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

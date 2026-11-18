@@ -4,65 +4,38 @@ import { call, clientId, errorText, haptic, notify } from '../tg';
 import { bc, qty, parseBC, UBC, dateTime } from '../format';
 import { Logo } from '../components/Logo';
 import { Verified } from '../components/icons';
+import { CandleChart } from '../components/Chart';
+import { TFS } from './Token';
+import { useFlash } from '../components/Avatar';
 
 const DUR_LABEL: Record<number, string> = { 30: '30 с', 60: '1 мин', 180: '3 мин', 300: '5 мин' };
 const px = (x: number, scale: number) => bc(Math.floor(x / scale));
-
-function LiveChart({ points, open, scale }: { points: any[]; open: any[]; scale: number }) {
-  const W = 360, H = 170;
-  if (points.length < 2) return <div className="empty" style={{ height: H }}>Загрузка графика…</div>;
-  const ps = points.map((p) => p.p);
-  const lo = Math.min(...ps, ...open.map((o) => o.entry_price)), hi = Math.max(...ps, ...open.map((o) => o.entry_price));
-  const span = hi - lo || hi * 0.004 || 1;
-  const flat = hi === lo;
-  // точки по порядку (несколько сделок в одну секунду не сливаются в черту)
-  const x = (i: number) => (i / Math.max(1, points.length - 1)) * (W - 8) + 4;
-  const y = (v: number) => H - 10 - ((v - lo) / span) * (H - 24);
-  let d = '';
-  points.forEach((p, i) => { d += (i ? ` L ${x(i)} ${y(points[i - 1].p)} L ` : 'M ') + `${x(i)} ${y(p.p)}`; });
-  const last = points[points.length - 1];
-  const up = last.p >= points[0].p;
-  return (
-    <div className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height: H }}>
-        <defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor={up ? 'var(--up)' : 'var(--down)'} stopOpacity="0.35" /><stop offset="1" stopColor={up ? 'var(--up)' : 'var(--down)'} stopOpacity="0" /></linearGradient></defs>
-        <path d={`${d} L ${x(points.length - 1)} ${H} L ${x(0)} ${H} Z`} fill="url(#lg)" />
-        <path d={d} fill="none" stroke={up ? 'var(--up)' : 'var(--down)'} strokeWidth={1.8} />
-        {open.map((o) => (
-          <g key={o.id}>
-            <line x1={0} x2={W} y1={y(o.entry_price)} y2={y(o.entry_price)} stroke={o.direction === 'up' ? 'var(--up)' : 'var(--down)'} strokeDasharray="4 3" strokeWidth={1} />
-            <text x={4} y={y(o.entry_price) - 3}>{o.direction === 'up' ? '▲' : '▼'} {px(o.entry_price, scale)}</text>
-          </g>
-        ))}
-        <circle cx={x(points.length - 1)} cy={y(last.p)} r={3.5} fill={up ? 'var(--up)' : 'var(--down)'} />
-        {flat && <text x={W / 2} y={y(last.p) - 10} textAnchor="middle">сделок пока не было — цена стоит</text>}
-      </svg>
-    </div>
-  );
-}
 
 export function Trading({ nav, tokenId }: { nav: Nav; tokenId?: number }) {
   const [d, setD] = useState<any>(null);
   const [sel, setSel] = useState<number | undefined>(tokenId);
   const [amt, setAmt] = useState('100');
   const [dur, setDur] = useState(60);
+  const [tf, setTf] = useState('1m');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
-  const load = useCallback(() => call('app_trading', { tokenId: sel }).then((r) => { setD(r); if (!sel && r.asset) setSel(r.asset.id); }, (e) => setErr(errorText(e))), [sel]);
+  const load = useCallback(() => call('app_trading', { tokenId: sel, tf }).then((r) => { setD(r); if (!sel && r.asset) setSel(r.asset.id); }, (e) => setErr(errorText(e))), [sel, tf]);
   useEffect(() => { load(); }, [load]);
   // Пока экран открыт — обновляем цену каждые 3 секунды.
   useEffect(() => {
-    const h = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 3000);
+    const h = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 5000);
     const c = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => { clearInterval(h); clearInterval(c); };
   }, [load]);
-  if (!d) return <div className="loading">{err || 'Загрузка…'}</div>;
+  const flash = useFlash(d?.candles?.length ? d.candles[d.candles.length - 1].c : undefined);
+  if (!d) return err ? <div className="loading">{err}</div> : <><div className="skeleton" style={{ height: 300 }} /><div className="skeleton" style={{ height: 240 }} /></>;
   const skew = d.now - Math.floor(Date.now() / 1000);
   const a = d.asset, cfg = d.config;
   const stake = parseBC(amt) ?? 0;
   const free = d.wallet.bc - d.wallet.bc_reserved;
   const last = d.points.length ? d.points[d.points.length - 1].p : a?.price_x;
+  const lastPrice = d.candles?.length ? d.candles[d.candles.length - 1].c : Math.floor((last ?? 0) / d.scale);
   const place = async (direction: 'up' | 'down') => {
     setBusy(true);
     try {
@@ -91,9 +64,12 @@ export function Trading({ nav, tokenId }: { nav: Nav; tokenId?: number }) {
             <div className="row">
               <div className="row" style={{ gap: 10 }}><Logo id={a.id} ticker={a.ticker} v={a.logo_v} />
                 <div className="col"><b>${a.ticker}{a.is_verified ? <Verified /> : null}</b><span className="hint small">{a.name}</span></div></div>
-              <div className="col" style={{ textAlign: 'right' }}><span className="mid num">{px(last, d.scale)}</span><span className="hint small">BC за токен</span></div>
+              <div className="col" style={{ textAlign: 'right' }}><span className={'mid num ' + flash}>{bc(lastPrice)}</span><span className="hint small">BC за токен</span></div>
             </div>
-            <div style={{ marginTop: 10 }}><LiveChart points={d.points} open={myOpen} scale={d.scale} /></div>
+            <div style={{ marginTop: 10 }}>
+              <CandleChart candles={d.candles} height={200} lines={myOpen.map((o: any) => ({ price: Math.floor(o.entry_price / d.scale), color: o.direction === 'up' ? 'var(--up)' : 'var(--down)', label: `${o.direction === 'up' ? '▲' : '▼'} вход ${px(o.entry_price, d.scale)}` }))} />
+            </div>
+            <div className="chips" style={{ marginTop: 8 }}>{TFS.map(([k, l]) => <button key={k} className={tf === k ? 'on' : ''} onClick={() => setTf(k)}>{l}</button>)}</div>
           </div>
           <div className="card">
             <div className="field"><label>Сумма сделки</label>

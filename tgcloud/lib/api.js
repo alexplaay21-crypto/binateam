@@ -54,7 +54,7 @@ export async function me(db, uid) {
   ]);
   return {
     user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, is_banned: !!user.is_banned,
-            vip: user.vip_until > faucet.now, skin: user.skin },
+            vip: user.vip_until > faucet.now, skin: user.skin, bg: user.bg, photo_url: user.photo_url },
     ref_link: `https://t.me/${BOT_USERNAME}?startapp=ref_${user.id}`,
     wallet, faucet, portfolio: pf, next_token_fee: fee.fee, tokens_created: fee.n,
     config: {
@@ -110,7 +110,7 @@ export async function token(db, uid, input) {
        ${P24('t')} AS price_24h,
        COALESCE((SELECT sum(qty) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_qty_24h,
        COALESCE((SELECT sum(notional) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_24h,
-       (SELECT count(*) FROM token_holders WHERE token_id = t.id AND balance > 0) AS holders,
+       (SELECT count(*) FROM token_holders WHERE token_id = t.id AND balance > 0 AND user_id > 0) AS holders,
        COALESCE((SELECT sum(diamonds) FROM token_promotions WHERE token_id = t.id AND ends_at > ${NOW}), 0) AS promo,
        ${NOW} AS now
      FROM tokens t LEFT JOIN users u ON u.id = t.creator_id WHERE t.id = :t AND (t.is_hidden = 0 OR :admin = 1)`,
@@ -134,7 +134,7 @@ export async function token(db, uid, input) {
     const fee = vip ? 0 : st.amm_fee_bps;
     limits = {
       max_buy_bc: Math.floor(Math.floor(X * (r - 1) * 0.999) * (10_000 + fee) / 10_000),
-      max_sell_qty: Math.floor(pool.tokens * (r - 1) * 0.999),
+      max_sell_qty: Math.min(Math.floor(pool.tokens * (r - 1) * 0.999), pool.real_bc > 0 ? Math.floor((pool.real_bc * pool.tokens) / (X - pool.real_bc)) : 0),
       fee_bps: fee, pool_tokens: pool.tokens, pool_bc: pool.real_bc,
     };
   }
@@ -156,7 +156,24 @@ export async function swapApi(db, uid, input) {
 
 export async function tradingApi(db, uid, input) {
   if (input.action === 'open') return { position: await TR.openPosition(db, uid, input) };
-  return TR.view(db, uid, input);
+  const v = await TR.view(db, uid, input);
+  v.tf = input.tf ?? '1m';
+  v.candles = v.asset ? await E.candles(db, v.asset.id, v.tf, 60) : [];
+  return v;
+}
+
+// Топ богатых: BC + токены по текущей цене. Системные счета и заблокированные не учитываются.
+export async function top(db, uid) {
+  const worth = `w.bc + COALESCE((SELECT sum(h.balance * t.last_price) FROM token_holders h JOIN tokens t ON t.id = h.token_id WHERE h.user_id = u.id AND h.balance > 0), 0)`;
+  const rows = await db.all(
+    `SELECT u.id, u.username, u.first_name, u.photo_url, u.skin, u.vip_until > ${NOW} AS vip, ${worth} AS worth
+     FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.id > 0 AND u.is_banned = 0
+     ORDER BY worth DESC, u.id ASC LIMIT 50`);
+  const mine = await db.get(`SELECT ${worth} AS worth FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.id = :u`, { ':u': uid });
+  const rank = await db.get(
+    `SELECT count(*) + 1 AS r FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.id > 0 AND u.is_banned = 0 AND ${worth} > :w`, { ':w': mine?.worth ?? 0 });
+  const skins = await db.all(`SELECT id, data FROM shop_items WHERE kind = 'skin'`);
+  return { items: rows, me: { worth: mine?.worth ?? 0, rank: rank.r }, skins };
 }
 
 export async function social(db, uid, input) {
@@ -265,12 +282,12 @@ export async function profile(db, uid, input) {
   const [user, items, skins, created] = await Promise.all([
     E.getUser(db, uid),
     db.all('SELECT item_id FROM user_items WHERE user_id = :u', { ':u': uid }),
-    db.all(`SELECT id, title, data FROM shop_items WHERE kind = 'skin'`),
+    db.all(`SELECT id, title, data, price FROM shop_items WHERE kind = 'skin' ORDER BY sort`),
     db.all(`SELECT ${TOKEN_COLS()} FROM tokens t WHERE t.creator_id = :u ORDER BY t.id DESC`, { ':u': uid }),
   ]);
   return {
     ...w, user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, skin: user.skin, created_at: user.created_at,
-                  vip: user.vip_until > (await db.get(`SELECT ${NOW} AS n`)).n },
+                  vip: user.vip_until > (await db.get(`SELECT ${NOW} AS n`)).n, bg: user.bg, photo_url: user.photo_url },
     ref: await SO.referralStats(db, uid), ref_link: `https://t.me/${BOT_USERNAME}?startapp=ref_${uid}`,
     transfers: await db.all(`SELECT tr.*, t.ticker, uf.username AS from_username, ut.username AS to_username FROM transfers tr
       LEFT JOIN tokens t ON t.id = tr.token_id LEFT JOIN users uf ON uf.id = tr.from_id LEFT JOIN users ut ON ut.id = tr.to_id
@@ -282,6 +299,10 @@ export async function profile(db, uid, input) {
 export async function shop(db, uid, input) {
   if (input.action === 'buy') return { purchase: await E.shopBuy(db, uid, input.itemId, String(input.clientId ?? '')) };
   if (input.action === 'equip') { await E.equipSkin(db, uid, input.itemId ?? null); return { ok: true }; }
+  if (input.action === 'equip_bg') {
+    await db.run('UPDATE users SET bg = :b WHERE id = :u', { ':b': input.itemId ?? null, ':u': uid }).catch((e) => { throw E.toBinaError(e) ?? e; });
+    return { ok: true };
+  }
   if (input.action === 'promote') return { promo: await E.promote(db, uid, input.tokenId, input.diamonds, String(input.clientId ?? '')) };
   const st = await E.settings(db);
   const [items, owned, w] = await Promise.all([

@@ -80,19 +80,20 @@ export async function migrate(db) {
 export async function ensureUser(db, tgUser, { admin = false, ref = null } = {}) {
   const id = Number(tgUser?.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw new BinaError('BAD_USER');
-  const u = await db.get('SELECT username, first_name, is_admin FROM users WHERE id = :id', { ':id': id });
+  const u = await db.get('SELECT username, first_name, is_admin, photo_url FROM users WHERE id = :id', { ':id': id });
   const username = tgUser.username ?? null, first = tgUser.first_name ?? null;
+  const photo = typeof tgUser.photo_url === 'string' && /^https:\/\//.test(tgUser.photo_url) ? tgUser.photo_url.slice(0, 500) : null;
   if (!u) {
     await db.run(
-      `INSERT INTO users (id, username, first_name, is_admin, faucet_at, created_at, referrer_id)
-       VALUES (:id, :u, :f, :a, ${NOW}, ${NOW}, (SELECT id FROM users WHERE id = :ref AND id > 0 AND id <> :id))
+      `INSERT INTO users (id, username, first_name, is_admin, faucet_at, created_at, referrer_id, photo_url)
+       VALUES (:id, :u, :f, :a, ${NOW}, ${NOW}, (SELECT id FROM users WHERE id = :ref AND id > 0 AND id <> :id), :ph)
        ON CONFLICT (id) DO NOTHING`,
-      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0, ':ref': Number.isSafeInteger(Number(ref)) ? Number(ref) : null },
+      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0, ':ref': Number.isSafeInteger(Number(ref)) ? Number(ref) : null, ':ph': photo },
     );
-  } else if (u.username !== username || u.first_name !== first || (admin && !u.is_admin)) {
+  } else if (u.username !== username || u.first_name !== first || (admin && !u.is_admin) || (photo && u.photo_url !== photo)) {
     await db.run(
-      'UPDATE users SET username = :u, first_name = :f, is_admin = max(is_admin, :a) WHERE id = :id',
-      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0 },
+      'UPDATE users SET username = :u, first_name = :f, is_admin = max(is_admin, :a), photo_url = COALESCE(:ph, photo_url) WHERE id = :id',
+      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0, ':ph': photo },
     );
   }
   return id;

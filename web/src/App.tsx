@@ -10,6 +10,8 @@ import { Shop } from './screens/Shop';
 import { Admin } from './screens/Admin';
 import { Trading } from './screens/Trading';
 import { Send } from './screens/Send';
+import { Rich } from './screens/Rich';
+import { Ambient } from './components/Avatar';
 
 type TabName = 'home' | 'market' | 'trading' | 'shop' | 'profile';
 export type Route =
@@ -18,7 +20,8 @@ export type Route =
   | { name: 'create' }
   | { name: 'top50' }
   | { name: 'admin' }
-  | { name: 'send'; tokenId?: number };
+  | { name: 'send'; tokenId?: number }
+  | { name: 'rich' };
 export type Nav = { open: (r: Route) => void; back: () => void; me: any; reloadMe: () => void };
 
 const TABS: { name: TabName; label: string; icon: string }[] = [
@@ -91,7 +94,7 @@ export function App() {
   }, [stack.length, back]);
 
   if (error && !me) return <div className="app"><div className="loading">{error}</div></div>;
-  if (!me) return <div className="app"><div className="loading"><div className="big gradtext">Bina Play</div></div></div>;
+  if (!me) return <><Ambient /><div className="app"><div className="loading"><div className="big gradtext">Bina Play</div></div></div></>;
 
   const nav: Nav = { open, back, me, reloadMe };
   const tabs = TABS;
@@ -99,6 +102,7 @@ export function App() {
   const selected = Math.max(0, tabs.findIndex((t) => t.name === tabRoute));
   return (
     <>
+      <Ambient />
       <div className="app">
         {route.name === 'home' && <Home nav={nav} />}
         {route.name === 'market' && <Market nav={nav} />}
@@ -107,6 +111,7 @@ export function App() {
         {route.name === 'admin' && <Admin nav={nav} />}
         {route.name === 'trading' && <Trading key={'tr' + ((route as any).tokenId ?? '')} nav={nav} tokenId={(route as any).tokenId} />}
         {route.name === 'send' && <Send nav={nav} tokenId={(route as any).tokenId} />}
+        {route.name === 'rich' && <Rich nav={nav} />}
         {route.name === 'token' && <Token key={route.id} id={route.id} nav={nav} />}
         {route.name === 'create' && <Create nav={nav} />}
         {route.name === 'top50' && <Top50 nav={nav} />}

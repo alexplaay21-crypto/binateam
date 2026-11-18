@@ -5,6 +5,7 @@ import { bc, qty, dateTime, duration, pct, changeClass, KIND_LABEL } from '../fo
 import { Logo } from '../components/Logo';
 import { TokenName, TokenRow } from '../components/TokenRow';
 import { UserName } from '../components/User';
+import { Avatar, CountUp, itemData } from '../components/Avatar';
 
 export function Faucet({ nav, onDone }: { nav: Nav; onDone?: () => void }) {
   const f = nav.me.faucet;
@@ -51,27 +52,27 @@ export function Profile({ nav }: { nav: Nav }) {
   const cancel = async (id: number) => {
     try { await call('app_order', { action: 'cancel', orderId: id }); haptic('success'); load(); nav.reloadMe(); } catch (e) { notify(errorText(e)); }
   };
+  const equipBg = async (id: string | null) => {
+    try { await call('app_shop', { action: 'equip_bg', itemId: id }); haptic('success'); load(); nav.reloadMe(); } catch (e) { notify(errorText(e)); }
+  };
   const equip = async (id: string | null) => {
     try { await call('app_shop', { action: 'equip', itemId: id }); haptic('success'); load(); } catch (e) { notify(errorText(e)); }
   };
-  if (!d) return <div className="loading">{err || 'Загрузка…'}</div>;
+  if (!d) return err ? <div className="loading">{err}</div> : <><div className="skeleton" style={{ height: 260 }} /><div className="skeleton" /></>;
   const w = d.wallet, u = d.user;
   const colors = skinColors(d.skins, u.skin);
   const name = u.first_name || (u.username ? '@' + u.username : 'Игрок');
   return (
     <>
-      <div className={'card hero' + (u.vip ? ' vipbg' : '')} style={{ textAlign: 'center' }}>
-        <div className="ring" style={colors ? ({ '--a': colors.a, '--b': colors.b } as any) : u.vip ? ({ '--a': '#f5c542', '--b': '#e45fa2' } as any) : undefined}>
-          <div className="logo lg" style={{ background: 'var(--glass-strong)', color: 'var(--accent)', fontSize: 22 }}>{name.replace('@', '').slice(0, 1).toUpperCase()}</div>
-        </div>
-        <div className="mid" style={{ marginTop: 8 }}>{name}{u.vip ? ' 👑' : ''}</div>
+      <div className={'card hero' + (u.bg ? ' pbg pbg-' + (u.bg === 'vip' ? 'vip' : itemData(d.skins, u.bg)?.bg) : u.vip ? ' pbg pbg-vip' : '')} style={{ textAlign: 'center' }}>
+        <Avatar u={{ ...u, photo_url: u.photo_url }} size={84} frame={itemData(d.skins, u.skin) ?? undefined} />
+        <div className="mid" style={{ marginTop: 10 }}>{name}{u.vip ? ' 👑' : ''}</div>
         <div className="hint small">{u.username ? '@' + u.username + ' · ' : ''}ID {u.id}{u.vip ? ' · VIP' : ''}{u.is_admin ? ' · админ' : ''}</div>
         <div className="sep" />
-        <div className="big num">{bc(w.bc)} <span className="hint" style={{ fontSize: 16 }}>BC</span></div>
+        <div className="big num"><CountUp value={w.bc} format={bc} /> <span className="hint" style={{ fontSize: 16 }}>BC</span></div>
         <div className="hint small num">токены ≈ {bc(d.portfolio.value)} BC · {qty(w.diamonds)} 💎</div>
-        <div className="grid3" style={{ marginTop: 14 }}>
+        <div className="grid2" style={{ marginTop: 14 }}>
           <button className="btn sm" onClick={() => nav.open({ name: 'send' })}>Перевести</button>
-          <button className="btn ghost sm" onClick={() => nav.open({ name: 'shop' })}>Магазин</button>
           <button className="btn ghost sm" onClick={() => nav.open({ name: 'create' })}>Свой токен</button>
         </div>
       </div>
@@ -184,23 +185,41 @@ export function Profile({ nav }: { nav: Nav }) {
       )}
 
       {sec === 'style' && (
-        <div className="card">
-          <h3>Рамка профиля</h3>
-          <div className="grid2">
-            <button className={'tile' + (!u.skin ? ' on' : '')} onClick={() => equip(null)}>
-              <div className="swatch" style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-2))' }} /><b>Стандартная</b></button>
-            {d.skins.map((s: any) => {
-              const c = skinColors(d.skins, s.id);
-              const owned = d.owned.includes(s.id);
-              return (
-                <button key={s.id} className={'tile' + (u.skin === s.id ? ' on' : '')} onClick={() => (owned ? equip(s.id) : nav.open({ name: 'shop' }))}>
-                  <div className="swatch" style={{ background: `linear-gradient(135deg, ${c?.a}, ${c?.b})`, opacity: owned ? 1 : 0.45 }} />
-                  <b>{s.title}</b><span className="hint small">{owned ? (u.skin === s.id ? 'Надето' : 'Надеть') : 'В магазине'}</span>
-                </button>
-              );
-            })}
+        <>
+          <div className="card">
+            <h3>Рамка аватарки</h3>
+            <div className="grid3">
+              <button className={'tile' + (!u.skin ? ' on' : '')} onClick={() => equip(null)} style={{ alignItems: 'center' }}>
+                <Avatar u={u} size={46} frame={null} crown={false} /><span className="small">Без рамки</span></button>
+              {d.skins.filter((x: any) => itemData(d.skins, x.id)?.type !== 'bg').map((x: any) => {
+                const owned = d.owned.includes(x.id);
+                return (
+                  <button key={x.id} className={'tile' + (u.skin === x.id ? ' on' : '')} style={{ alignItems: 'center', opacity: owned ? 1 : 0.55 }}
+                    onClick={() => (owned ? equip(x.id) : nav.open({ name: 'shop' }))}>
+                    <Avatar u={u} size={46} frame={itemData(d.skins, x.id)} crown={false} />
+                    <span className="small">{x.title}</span><span className="hint small">{owned ? (u.skin === x.id ? 'надета' : 'надеть') : `${x.price} 💎`}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+          <div className="card">
+            <h3>Фон профиля</h3>
+            <div className="grid2">
+              <button className={'tile' + (!u.bg ? ' on' : '')} onClick={() => equipBg(null)}><div className="swatch" style={{ background: 'var(--field)' }} /><b>Обычный</b></button>
+              {u.vip && <button className={'tile' + (u.bg === 'vip' ? ' on' : '')} onClick={() => equipBg('vip')}><div className="swatch pbg pbg-vip" /><b>VIP 👑</b></button>}
+              {d.skins.filter((x: any) => itemData(d.skins, x.id)?.type === 'bg').map((x: any) => {
+                const owned = d.owned.includes(x.id);
+                return (
+                  <button key={x.id} className={'tile' + (u.bg === x.id ? ' on' : '')} style={{ opacity: owned ? 1 : 0.6 }} onClick={() => (owned ? equipBg(x.id) : nav.open({ name: 'shop' }))}>
+                    <div className={'swatch pbg pbg-' + itemData(d.skins, x.id)?.bg} />
+                    <div className="row"><b>{x.title}</b><span className="hint small">{owned ? (u.bg === x.id ? 'выбран' : '') : `${x.price} 💎`}</span></div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
     </>
   );

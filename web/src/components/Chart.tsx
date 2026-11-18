@@ -1,10 +1,10 @@
 import { bc } from '../format';
 
 // Свечной график по реальным сделкам. Пустые периоды — плоская линия без объёма.
-export function CandleChart({ candles, height = 220 }: { candles: any[]; height?: number }) {
+export function CandleChart({ candles, height = 220, lines = [] }: { candles: any[]; height?: number; lines?: { price: number; color: string; label: string }[] }) {
   const W = 360, H = height, volH = 40, pad = 4, axis = 52;
   if (!candles.length) return <div className="empty">Сделок пока не было</div>;
-  const hi = Math.max(...candles.map((c) => c.h)), lo = Math.min(...candles.map((c) => c.l));
+  const hi = Math.max(...candles.map((c) => c.h), ...lines.map((l) => l.price)), lo = Math.min(...candles.map((c) => c.l), ...lines.map((l) => l.price));
   const span = hi - lo || hi * 0.02 || 1;
   const top = hi + span * 0.08, bottom = lo - span * 0.08;
   const plotH = H - volH - pad * 2;
@@ -41,6 +41,12 @@ export function CandleChart({ candles, height = 220 }: { candles: any[]; height?
             </g>
           );
         })}
+        {lines.map((l, i) => (
+          <g key={i}>
+            <line x1={0} x2={W - axis} y1={y(l.price)} y2={y(l.price)} stroke={l.color} strokeWidth={1} strokeDasharray="5 3" />
+            <text x={4} y={y(l.price) - 3} style={{ fill: l.color }}>{l.label}</text>
+          </g>
+        ))}
         <line x1={0} x2={W - axis} y1={y(last)} y2={y(last)} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="3 3" />
         <rect x={W - axis + 1} y={y(last) - 7} width={axis - 1} height={14} rx={3} fill="var(--accent)" />
         <text x={W - axis + 4} y={y(last) + 3} style={{ fill: 'var(--on-accent)' }}>{bc(last)}</text>

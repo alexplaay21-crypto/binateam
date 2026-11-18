@@ -42,13 +42,14 @@ export function calcSwap(pool, side, amount, { feeBps, impactBps, vip }) {
   }
   const q = Math.floor(amount);
   if (q < 1) throw new BinaError('AMOUNT_TOO_SMALL');
-  let bc = Math.floor((X * q) / (T + q) * (1 - EPS));
-  if (bc > pool.real_bc) bc = pool.real_bc;
-  if (bc < 1) throw new BinaError('POOL_EMPTY');
+  // продать можно только столько, сколько реальных BC покупатели внесли в пул
+  const poolQty = pool.real_bc > 0 ? Math.floor((pool.real_bc * T) / (X - pool.real_bc)) : 0;
+  const bc = Math.floor((X * q) / (T + q) * (1 - EPS));
+  if (bc < 1 || poolQty < 1) throw new BinaError('POOL_EMPTY');
   const f = bps(bc, fee);
-  const maxQty = Math.floor(T * (maxRatio - 1) * 0.999);
+  const maxQty = Math.min(poolQty, Math.floor(T * (maxRatio - 1) * 0.999));
   const priceAfter = Math.max(1, idiv(X - bc, T + q));
-  return { side, qty: q, bc, fee: f, total: bc - f, priceBefore, priceAfter, impactBps: Math.round(((priceAfter - priceBefore) * 10_000) / priceBefore), maxQty, tooBig: q > maxQty };
+  return { side, qty: q, bc, fee: f, total: bc - f, priceBefore, priceAfter, impactBps: Math.round(((priceAfter - priceBefore) * 10_000) / priceBefore), maxQty, poolQty, tooBig: q > maxQty };
 }
 
 export async function quote(db, uid, { tokenId, side, amount }) {
@@ -71,7 +72,7 @@ export async function swap(db, uid, { tokenId, side, amount, minOut, clientId })
     const pool = await getPool(db, tokenId);
     if (!pool) throw new BinaError('NO_POOL');
     const c = calcSwap(pool, side, Number(amount), { feeBps: st.amm_fee_bps, impactBps: st.amm_max_impact_bps, vip });
-    if (c.tooBig) throw new BinaError('IMPACT_TOO_HIGH');
+    if (c.tooBig) throw new BinaError(side === 'sell' && c.qty > c.poolQty ? 'POOL_EMPTY' : 'IMPACT_TOO_HIGH');
     const out = side === 'buy' ? c.qty : c.total;
     if (minOut != null && out < Number(minOut)) throw new BinaError('SLIPPAGE');
     try {

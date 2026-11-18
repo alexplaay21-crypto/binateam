@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Nav } from '../App';
 import { call, clientId, errorText, haptic, notify, tg } from '../tg';
 import { qty, duration, bc } from '../format';
-import { skinColors } from './Profile';
+import { Avatar, itemData } from '../components/Avatar';
 
 export function Shop({ nav }: { nav: Nav }) {
   const [d, setD] = useState<any>(null);
@@ -78,20 +78,33 @@ export function Shop({ nav }: { nav: Nav }) {
         </div>
       )}
       <div className="card">
-        <h3>Скины профиля</h3>
-        <div className="grid2">
-          {skins.map((it: any) => {
-            const c = skinColors(d.items, it.id);
+        <h3>Рамки для аватарки</h3>
+        <div className="grid3">
+          {skins.filter((it: any) => itemData(d.items, it.id)?.type !== 'bg').map((it: any) => {
             const owned = d.owned.includes(it.id);
             return (
-              <button key={it.id} className="tile" disabled={owned || busy === it.id} onClick={() => buyItem(it)}>
-                <div className="swatch" style={{ background: `linear-gradient(135deg, ${c?.a}, ${c?.b})` }} />
-                <div className="row"><b>{it.title}</b>{owned ? <span className="badge">куплено</span> : <span className="badge accent">{it.price} 💎</span>}</div>
+              <button key={it.id} className="tile" style={{ alignItems: 'center' }} disabled={owned || busy === it.id} onClick={() => buyItem(it)}>
+                <Avatar u={nav.me.user} size={50} frame={itemData(d.items, it.id)} crown={false} />
+                <b className="small">{it.title}</b>{owned ? <span className="badge">есть</span> : <span className="badge accent">{it.price} 💎</span>}
               </button>
             );
           })}
         </div>
-        <div className="hint small" style={{ marginTop: 8 }}>Скин меняет рамку вашего профиля. Надеть — в Профиле → Оформление.</div>
+      </div>
+      <div className="card">
+        <h3>Фоны профиля</h3>
+        <div className="grid2">
+          {skins.filter((it: any) => itemData(d.items, it.id)?.type === 'bg').map((it: any) => {
+            const owned = d.owned.includes(it.id);
+            return (
+              <button key={it.id} className="tile" disabled={owned || busy === it.id} onClick={() => buyItem(it)}>
+                <div className={'swatch pbg pbg-' + itemData(d.items, it.id)?.bg} style={{ height: 64 }} />
+                <div className="row"><b>{it.title}</b>{owned ? <span className="badge">есть</span> : <span className="badge accent">{it.price} 💎</span>}</div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="hint small" style={{ marginTop: 8 }}>Надеть рамку и фон — Профиль → Стиль.</div>
       </div>
       <div className="card">
         <h3>Реклама в ТОП-50</h3>

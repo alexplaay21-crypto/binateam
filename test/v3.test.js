@@ -38,7 +38,7 @@ test('пул: выпуск 210 000 по 0.01, 100 000 себе, покупки �
   assert.ok(s.swap.bc <= b.swap.bc, 'продажа тех же токенов не даёт больше BC');
   assert.ok((await E.getToken(db, t.id)).last_price <= p1);
   // создатель не может продать заблокированный резерв, а когда пул пуст — не получит BC
-  await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 500, clientId: id() }), { code: 'INSUFFICIENT_TOKENS' });
+  await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 500, clientId: id() }), (e) => ['INSUFFICIENT_TOKENS', 'POOL_EMPTY'].includes(e.code));
   await tick(8 * 86400);
   await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 1_000, clientId: id() }), (e) => ['POOL_EMPTY', 'MIN_ORDER'].includes(e.code));
   await ok();
@@ -222,5 +222,32 @@ test('маркет-мейкер: цена официального токена 
   await TR.settleDue(db, {});
   const r = await db.get('SELECT status FROM trading_positions WHERE id = :i', { ':i': pos.id });
   assert.ok(['won', 'lost', 'refund'].includes(r.status));
+  await ok();
+});
+
+test('топ богатых без системных счетов, аватарка и фон профиля', async () => {
+  const A = await import('../tgcloud/lib/api.js');
+  await E.ensureUser(db, { id: 50, username: 'rich', photo_url: 'https://t.me/i/userpic/320/x.jpg' });
+  await E.adminAdjust(db, 1, { userId: 50, currency: 'bc', delta: 100_000 * BC, reason: 'test', opId: id() });
+  const r = await A.top(db, 50);
+  assert.equal(r.items[0].id, 50);
+  assert.equal(r.items[0].photo_url, 'https://t.me/i/userpic/320/x.jpg');
+  assert.ok(r.items.every((x) => x.id > 0));
+  assert.equal(r.me.rank, 1);
+  await assert.rejects(A.shop(db, 50, { action: 'equip_bg', itemId: 'bg_galaxy' }), { code: 'NOT_OWNED' });
+  await E.creditStars(db, { chargeId: 'bgx', userId: 50, pack: 'p59', stars: 49, diamonds: 59 });
+  await E.shopBuy(db, 50, 'bg_galaxy', id());
+  await A.shop(db, 50, { action: 'equip_bg', itemId: 'bg_galaxy' });
+  assert.equal((await E.getUser(db, 50)).bg, 'bg_galaxy');
+  await ok();
+});
+
+test('продажа ограничена реальными BC пула', async () => {
+  const t = await E.createToken(db, 2, { ticker: 'CAP', name: 'Cap', supply: 10_000, reserve: 5_000, p0: 1 * BC }, id());
+  await tick(8 * 86400);
+  await P.swap(db, 3, { tokenId: t.id, side: 'buy', amount: 50 * BC, clientId: id() });
+  await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 4_000, clientId: id() }), (e) => ['POOL_EMPTY', 'IMPACT_TOO_HIGH'].includes(e.code));
+  const q = await P.quote(db, 2, { tokenId: t.id, side: 'sell', amount: 10 });
+  assert.ok(q.poolQty > 0 && q.poolQty < 100);
   await ok();
 });
