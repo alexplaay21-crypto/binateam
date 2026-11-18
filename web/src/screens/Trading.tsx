@@ -7,12 +7,13 @@ import { Verified } from '../components/icons';
 import { CandleChart } from '../components/Chart';
 import { TFS } from './Token';
 import { useFlash } from '../components/Avatar';
+import { cache } from '../components/cache';
 
 const DUR_LABEL: Record<number, string> = { 30: '30 с', 60: '1 мин', 180: '3 мин', 300: '5 мин' };
 const px = (x: number, scale: number) => bc(Math.floor(x / scale));
 
 export function Trading({ nav, tokenId }: { nav: Nav; tokenId?: number }) {
-  const [d, setD] = useState<any>(null);
+  const [d, setD] = useState<any>(() => cache.get('trading:' + (tokenId ?? '')));
   const [sel, setSel] = useState<number | undefined>(tokenId);
   const [amt, setAmt] = useState('100');
   const [dur, setDur] = useState(60);
@@ -20,7 +21,7 @@ export function Trading({ nav, tokenId }: { nav: Nav; tokenId?: number }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
-  const load = useCallback(() => call('app_trading', { tokenId: sel, tf }).then((r) => { setD(r); if (!sel && r.asset) setSel(r.asset.id); }, (e) => setErr(errorText(e))), [sel, tf]);
+  const load = useCallback(() => call('app_trading', { tokenId: sel, tf }).then((r) => { cache.set('trading:' + (tokenId ?? ''), r); setD(r); if (!sel && r.asset) setSel(r.asset.id); }, (e) => setErr(errorText(e))), [sel, tf]);
   useEffect(() => { load(); }, [load]);
   // Пока экран открыт — обновляем цену каждые 3 секунды.
   useEffect(() => {

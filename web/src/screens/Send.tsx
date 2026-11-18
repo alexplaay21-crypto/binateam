@@ -52,7 +52,7 @@ export function Send({ nav, tokenId }: { nav: Nav; tokenId?: number }) {
           <span className="hint small num">Доступно: {isBC ? `${bc(d.wallet.bc - d.wallet.bc_reserved)} BC` : `${qty(Math.max(0, (h?.balance ?? 0) - (h?.reserved ?? 0) - (h?.locked ?? 0)))} шт`}
             {isBC ? ` · комиссия ${d.user.vip ? 'нет (VIP)' : bc(fee) + ' BC'}` : ''}</span></div>
         <button className="btn" disabled={!who || !amount || busy} onClick={send}>Отправить</button>
-        <div className="hint small" style={{ marginTop: 8 }}>Переводы доступны с аккаунтов старше 3 дней (VIP — сразу), до 50 000 BC в сутки. Отменить перевод нельзя.</div>
+        <div className="hint small" style={{ marginTop: 8 }}>Перевод приходит сразу. До 50 000 BC в сутки. Отменить перевод нельзя.</div>
       </div>
     </>
   );

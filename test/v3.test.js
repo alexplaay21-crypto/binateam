@@ -40,7 +40,8 @@ test('пул: выпуск 210 000 по 0.01, 100 000 себе, покупки �
   // создатель не может продать заблокированный резерв, а когда пул пуст — не получит BC
   await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 500, clientId: id() }), (e) => ['INSUFFICIENT_TOKENS', 'POOL_EMPTY'].includes(e.code));
   await tick(8 * 86400);
-  await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 1_000, clientId: id() }), (e) => ['POOL_EMPTY', 'MIN_ORDER'].includes(e.code));
+  const sold = await P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 1_000, clientId: id() });
+  assert.ok(sold.swap.bc > 0, 'после lock-up создатель продаёт свободно');
   await ok();
 });
 
@@ -81,7 +82,6 @@ test('VIP: 49 💎 навсегда, без комиссии, бонус 1000/4�
 });
 
 test('переводы BC и токенов, лимиты, передача прав создателя', async () => {
-  await assert.rejects(SO.transfer(db, 3, { to: '@u4', asset: 'bc', amount: 100 * BC, clientId: id() }), { code: 'ACCOUNT_TOO_NEW' });
   await tick(4 * 86400);
   const r = await SO.transfer(db, 3, { to: '@u4', asset: 'bc', amount: 100 * BC, clientId: id() });
   assert.equal(r.transfer.fee, 1 * BC);
@@ -242,12 +242,16 @@ test('топ богатых без системных счетов, аватар
   await ok();
 });
 
-test('продажа ограничена реальными BC пула', async () => {
-  const t = await E.createToken(db, 2, { ticker: 'CAP', name: 'Cap', supply: 10_000, reserve: 5_000, p0: 1 * BC }, id());
+test('свободная продажа: платформа доплачивает, если BC покупателей в пуле нет', async () => {
+  const t = await E.createToken(db, 2, { ticker: 'FREE', name: 'Free', supply: 10_000, reserve: 5_000, p0: 1 * BC }, id());
   await tick(8 * 86400);
-  await P.swap(db, 3, { tokenId: t.id, side: 'buy', amount: 50 * BC, clientId: id() });
-  await assert.rejects(P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 4_000, clientId: id() }), (e) => ['POOL_EMPTY', 'IMPACT_TOO_HIGH'].includes(e.code));
-  const q = await P.quote(db, 2, { tokenId: t.id, side: 'sell', amount: 10 });
-  assert.ok(q.poolQty > 0 && q.poolQty < 100);
+  const before = (await w(2)).bc;
+  const s = await P.swap(db, 2, { tokenId: t.id, side: 'sell', amount: 1_000, clientId: id() });
+  assert.ok(s.swap.bc > 800 * BC, 'получил BC по цене пула');
+  assert.equal((await w(2)).bc - before, s.swap.bc - s.swap.fee);
+  assert.ok((await E.getToken(db, t.id)).last_price < 1 * BC, 'цена упала');
+  // перевод сразу после регистрации
+  await E.ensureUser(db, { id: 70, username: 'fresh' });
+  await SO.transfer(db, 70, { to: 2, asset: 'bc', amount: 10 * BC, clientId: id() });
   await ok();
 });

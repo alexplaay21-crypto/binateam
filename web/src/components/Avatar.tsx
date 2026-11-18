@@ -15,13 +15,21 @@ export function Avatar({ u, size = 44, frame, crown = true }: { u: any; size?: n
   const name = String(u?.first_name || u?.username || '?').replace('@', '');
   // frame: undefined — рамка по умолчанию (золотая у VIP), null — без рамки
   const f = frame === undefined ? (u?.vip ? { a: '#f5c542', b: '#e45fa2', glow: 1 } : null) : frame;
-  const cls = 'ava' + (f?.anim === 'spin' ? ' spin' : '') + (f?.anim === 'pulse' ? ' pulse' : '') + (f?.glow ? ' glow' : '');
+  const cls = 'ava' + (f?.anim === 'spin' ? ' spin' : '') + (f?.anim === 'pulse' ? ' pulse' : '') + (f?.glow ? ' glow' : '') + (f?.pattern ? ' pat-' + f.pattern : '');
+  const orn = f?.pattern === 'hearts' ? '❤' : f?.pattern === 'stars' ? '★' : null;
   const style: any = { width: size, height: size, fontSize: size * 0.4 };
   if (f) { style['--fa'] = f.a; style['--fb'] = f.b; if (f.c) style['--fc'] = f.c; }
   return (
     <span className={cls} style={style}>
       {f && <span className="ring" />}
       {photo && !broken ? <img className="face" src={photo} alt="" onError={() => setBroken(true)} /> : <span className="face">{name.slice(0, 1).toUpperCase()}</span>}
+      {orn && (
+        <span className="orbit">
+          {Array.from({ length: 6 }, (_, i) => (
+            <span key={i} className="orn" style={{ fontSize: size * 0.2, color: f.a, transform: `translate(-50%, -50%) rotate(${i * 60}deg) translateY(${-size / 2 - 1}px)` }}>{orn}</span>
+          ))}
+        </span>
+      )}
       {crown && u?.vip ? <span className="crown" style={{ fontSize: size * 0.36 }}>👑</span> : null}
     </span>
   );

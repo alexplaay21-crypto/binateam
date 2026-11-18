@@ -269,3 +269,33 @@ body::before { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ===================== Узоры рамок ===================== */
+.ava.pat-dots .ring { background: repeating-conic-gradient(var(--fa) 0 7deg, transparent 7deg 15deg), conic-gradient(from 90deg, var(--fb), var(--fa)); }
+.ava.pat-stripes .ring { background: repeating-conic-gradient(var(--fa) 0 10deg, var(--fb) 10deg 20deg); }
+.ava.pat-zigzag .ring { background: repeating-conic-gradient(var(--fa) 0 6deg, var(--fb) 6deg 9deg, transparent 9deg 15deg); }
+.ava.pat-hearts .ring, .ava.pat-stars .ring { background: conic-gradient(var(--fa), var(--fb), var(--fa)); }
+.ava .orbit { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.ava.spin .orbit { animation: spin 8s linear infinite; }
+.ava .orn { position: absolute; left: 50%; top: 50%; line-height: 1; text-shadow: 0 0 4px rgba(0,0,0,.4); }
+
+/* ===================== Узоры фонов ===================== */
+.pbg::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .35;
+  background-image: radial-gradient(rgba(255,255,255,.55) 1px, transparent 1.4px); background-size: 16px 16px; }
+.pbg-galaxy::after, .pbg-matrix::after, .pbg-stars::after, .pbg-neongrid::after { background-image: none; }
+.pbg-dots::before { background-image: radial-gradient(circle, rgba(255,255,255,.5) 2.5px, transparent 3px), linear-gradient(135deg, #ff5d7a, #7c5cff, #2dd4bf, #ff5d7a);
+  background-size: 22px 22px, 300% 300%; }
+.pbg-waves::before { background-image: radial-gradient(circle at 50% 120%, transparent 18px, rgba(255,255,255,.18) 19px 21px, transparent 22px),
+  linear-gradient(160deg, #0b3a6b, #0ea5e9, #2dd4bf, #0b3a6b); background-size: 40px 24px, 300% 300%; }
+.pbg-hex::before { background-image:
+  linear-gradient(30deg, rgba(255,255,255,.14) 12%, transparent 12.5%, transparent 87%, rgba(255,255,255,.14) 87.5%),
+  linear-gradient(150deg, rgba(255,255,255,.14) 12%, transparent 12.5%, transparent 87%, rgba(255,255,255,.14) 87.5%),
+  linear-gradient(90deg, rgba(255,255,255,.1) 2%, transparent 2.5%, transparent 97%, rgba(255,255,255,.1) 97.5%),
+  linear-gradient(135deg, #3d2a05, #f59e0b, #b45309, #3d2a05); background-size: 40px 70px, 40px 70px, 40px 70px, 300% 300%; }
+.pbg-stars::before { background-image: radial-gradient(1.5px 1.5px at 10% 20%, #fff, transparent), radial-gradient(1px 1px at 30% 70%, #fff, transparent),
+  radial-gradient(2px 2px at 60% 30%, #fff, transparent), radial-gradient(1px 1px at 80% 80%, #fff, transparent), radial-gradient(1.5px 1.5px at 90% 15%, #fff, transparent),
+  linear-gradient(180deg, #05061a, #1b1350, #3b1d6b); background-size: 120px 120px, 90px 90px, 150px 150px, 70px 70px, 110px 110px, 100% 300%; }
+.pbg-checker::before { background-image: conic-gradient(rgba(255,255,255,.12) 25%, transparent 0 50%, rgba(255,255,255,.12) 0 75%, transparent 0),
+  linear-gradient(135deg, #1e1b4b, #e45fa2, #1e1b4b); background-size: 28px 28px, 300% 300%; }
+.pbg-neongrid::before { background-image: linear-gradient(rgba(183,156,255,.45) 1px, transparent 1px), linear-gradient(90deg, rgba(45,212,191,.45) 1px, transparent 1px),
+  linear-gradient(180deg, #0b0d24, #2a0b4a, #0b0d24); background-size: 24px 24px, 24px 24px, 100% 300%; }

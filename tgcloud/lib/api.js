@@ -134,7 +134,7 @@ export async function token(db, uid, input) {
     const fee = vip ? 0 : st.amm_fee_bps;
     limits = {
       max_buy_bc: Math.floor(Math.floor(X * (r - 1) * 0.999) * (10_000 + fee) / 10_000),
-      max_sell_qty: Math.min(Math.floor(pool.tokens * (r - 1) * 0.999), pool.real_bc > 0 ? Math.floor((pool.real_bc * pool.tokens) / (X - pool.real_bc)) : 0),
+      max_sell_qty: Math.floor(pool.tokens * (1 / Math.sqrt(Math.max(0.0001, 1 - st.amm_max_impact_bps / 10_000)) - 1) * 0.999),
       fee_bps: fee, pool_tokens: pool.tokens, pool_bc: pool.real_bc,
     };
   }

@@ -8,17 +8,18 @@ import { TokenName } from '../components/TokenRow';
 import { pickPhoto } from '../components/photo';
 import { UserName } from '../components/User';
 import { useFlash } from '../components/Avatar';
+import { cache } from '../components/cache';
 
 export const TFS: [string, string][] = [['1m', '1м'], ['5m', '5м'], ['15m', '15м'], ['1h', '1ч'], ['4h', '4ч'], ['1d', '1д']];
 const REFRESH_MS = 5_000;
 
 export function Token({ id, nav }: { id: number; nav: Nav }) {
-  const [d, setD] = useState<any>(null);
+  const [d, setD] = useState<any>(() => cache.get('token:' + id));
   const [tf, setTf] = useState('1m');
   const [err, setErr] = useState('');
   const tfRef = useRef(tf);
   tfRef.current = tf;
-  const load = useCallback(() => call('app_token', { id, tf: tfRef.current }).then(setD, (e) => setErr(errorText(e))), [id]);
+  const load = useCallback(() => call('app_token', { id, tf: tfRef.current }).then((r) => { cache.set('token:' + id, r); setD(r); }, (e) => setErr(errorText(e))), [id]);
   useEffect(() => { load(); }, [load, tf]);
   useEffect(() => {
     const h = setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
@@ -89,6 +90,7 @@ function Trade({ d, after }: { d: any; after: () => void }) {
   const [q, setQ] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const free = d.wallet.bc - d.wallet.bc_reserved;
+  const unit = Math.ceil(t.last_price * (1 + L.fee_bps / 10000) * 1.01);
   const freeTok = Math.max(0, d.position.balance - d.position.reserved - d.position.locked);
   const amount = side === 'buy' ? parseBC(val) : parseInt10(val);
   useEffect(() => {
@@ -104,6 +106,7 @@ function Trade({ d, after }: { d: any; after: () => void }) {
   else if (side === 'sell' && amount && amount > freeTok) problem = 'Недостаточно свободных токенов';
   else if (side === 'sell' && amount && amount > L.max_sell_qty) problem = `Сейчас можно продать до ${qty(L.max_sell_qty)} шт: в пуле ${bc(L.pool_bc)} BC от покупателей, и цена за сделку меняется не больше чем на 5%`;
   else if (d.trading_open) problem = 'У вас открыта сделка в трейдинге по этому токену — дождитесь итога';
+  else if (q?.error === 'AMOUNT_TOO_SMALL') problem = `1 $${t.ticker} стоит ≈ ${bc(unit)} BC — введите сумму не меньше`;
   else if (q?.error) problem = errorText({ code: q.error } as any);
   const go = async () => {
     setBusy(true);
@@ -116,8 +119,11 @@ function Trade({ d, after }: { d: any; after: () => void }) {
     } catch (e) { haptic('error'); notify(errorText(e)); }
     setBusy(false);
   };
+  // дорогой токен — кнопки по штукам, дешёвый — по сумме BC
   const chips = side === 'buy'
-    ? [10, 100, 500].map((v) => [String(v), v * UBC] as [string, number]).concat([['Макс', maxBuy]])
+    ? (t.last_price > 50 * UBC
+      ? [1, 5, 10].map((n) => [`${n} шт`, Math.min(free, n * unit)] as [string, number])
+      : [10, 100, 500].map((v) => [String(v), v * UBC] as [string, number])).concat([['Макс', maxBuy]])
     : [['25%', Math.floor(maxSell / 4)], ['50%', Math.floor(maxSell / 2)], ['Макс', maxSell]] as [string, number][];
   return (
     <div className="card">
@@ -132,7 +138,7 @@ function Trade({ d, after }: { d: any; after: () => void }) {
         <span className="hint small num">Доступно: {side === 'buy' ? `${bc(free)} BC` : `${qty(freeTok)} шт · в пуле ${bc(L.pool_bc)} BC`}</span>
       </div>
       <div className="chips" style={{ marginBottom: 12 }}>
-        {chips.map(([l, v]) => <button key={l} onClick={() => setVal(side === 'buy' ? String(Math.floor(v / UBC * 100) / 100).replace('.', ',') : String(v))}>{l}</button>)}
+        {chips.map(([l, v]) => <button key={l} onClick={() => setVal(side === 'buy' ? String(Math.ceil(v / UBC * 100) / 100).replace('.', ',') : String(v))}>{l}</button>)}
       </div>
       {q && !q.error && (
         <div className="notice num">

@@ -54,13 +54,13 @@ const MESSAGES: Record<string, string> = {
   CANNOT_TARGET_SELF: 'Нельзя применить к себе',
   BAD_SETTING: 'Эту настройку нельзя изменить',
   PAYMENT_NOT_FOUND: 'Платёж не найден или уже возвращён',
-  IMPACT_TOO_HIGH: 'Слишком крупная сделка: цена за одну сделку может измениться не больше чем на 5%',
+  IMPACT_TOO_HIGH: 'Слишком крупная сделка за один раз — разбейте на несколько',
   POOL_EMPTY: 'В пуле не хватает BC для такой продажи',
   POOL_CHANGED: 'Цена изменилась, попробуйте ещё раз',
   POOL_BUSY: 'Много сделок одновременно, попробуйте ещё раз',
   SLIPPAGE: 'Цена успела измениться больше чем на 3% — проверьте сумму и повторите',
   NO_POOL: 'У токена нет пула',
-  AMOUNT_TOO_SMALL: 'Слишком маленькая сумма',
+  AMOUNT_TOO_SMALL: 'Сумма меньше цены одного токена',
   POSITION_OPEN: 'У вас открыта сделка в трейдинге по этому токену — дождитесь итога',
   TRADING_DISABLED: 'Трейдинг временно выключен',
   ASSET_UNAVAILABLE: 'Этот токен сейчас недоступен для трейдинга',
@@ -68,7 +68,7 @@ const MESSAGES: Record<string, string> = {
   BAD_DURATION: 'Выберите срок сделки',
   ALREADY_VIP: 'У вас уже есть VIP',
   RECIPIENT_NOT_FOUND: 'Получатель не найден — он должен хотя бы раз открыть Bina Play',
-  ACCOUNT_TOO_NEW: 'Переводы доступны с аккаунтов старше 3 дней (VIP — сразу)',
+  ACCOUNT_TOO_NEW: 'Переводы пока недоступны для этого аккаунта',
   TRANSFER_LIMIT: 'Превышен лимит переводов: 50 000 BC в сутки',
   BAD_AMOUNT: 'Неверная сумма',
   BAD_NAME: 'Название — от 2 до 32 символов',
@@ -77,6 +77,7 @@ const MESSAGES: Record<string, string> = {
 
 export function errorText(e: any): string {
   if (e instanceof ApiError) return MESSAGES[e.code] ?? e.message ?? 'Ошибка';
+  if (e && typeof e.code === 'string') return MESSAGES[e.code] ?? 'Не получилось, попробуйте другую сумму';
   return 'Ошибка соединения. Попробуйте ещё раз.';
 }
 
