@@ -3,11 +3,13 @@ import { api, db } from 'sdk';
 import { ensureUser } from '../lib/engine.js';
 import { ADMIN_IDS } from '../lib/config.js';
 import { handleWidgetQuery, publicState } from '../lib/widget.js';
+import { mmTick } from '../lib/mm.js';
 
 export default async function (q) {
   let data, state = null;
   try {
     const uid = await ensureUser(db, q.from, { admin: ADMIN_IDS.includes(Number(q.from?.id)) });
+    await mmTick(db).catch(() => {});
     state = await handleWidgetQuery(db, uid, q.data);
     data = JSON.stringify(state);
   } catch (e) {

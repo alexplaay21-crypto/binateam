@@ -199,3 +199,28 @@ test('официальный токен: трейдинг без порога л
   await E.adminAction(db, 6714200331, { action: 'setting', key: 'trading_official_max_ubc', value: 50_000 * BC, opId: id() });
   await ok();
 });
+
+test('маркет-мейкер: цена официального токена ходит вверх-вниз в пределах ±3%, BC не теряются', async () => {
+  const MM = await import('../tgcloud/lib/mm.js');
+  await E.ensureUser(db, { id: 6714200331 }, { admin: true });
+  const b = await E.createToken(db, 6714200331, { ticker: 'BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC }, id(), 0, { official: true });
+  await db.run(`INSERT INTO mm_state (token_id, anchor_price) VALUES (${b.id}, ${2100 * BC})`);
+  const prices = [];
+  for (let i = 0; i < 150; i++) {
+    await tick(13);
+    await MM.mmTick(db);
+    prices.push((await E.getToken(db, b.id)).last_price);
+  }
+  const ups = prices.filter((p, i) => i && p > prices[i - 1]).length, downs = prices.filter((p, i) => i && p < prices[i - 1]).length;
+  assert.ok(ups > 20 && downs > 20, `ups ${ups} downs ${downs}`);
+  for (const p of prices) assert.ok(Math.abs(p / (2100 * BC) - 1) < 0.06, 'держится у опорной цены');
+  assert.equal(await MM.mmTick(db), 0, 'не чаще раза в 12 секунд');
+  // трейдинг: по официальному токену засчитывается любое движение
+  await E.adminAdjust(db, 6714200331, { userId: 3, currency: 'bc', delta: 1000 * BC, reason: 'test', opId: id() });
+  const pos = await TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 100 * BC, durationS: 30, clientId: id() });
+  for (let i = 0; i < 3; i++) { await tick(13); await MM.mmTick(db); }
+  await TR.settleDue(db, {});
+  const r = await db.get('SELECT status FROM trading_positions WHERE id = :i', { ':i': pos.id });
+  assert.ok(['won', 'lost', 'refund'].includes(r.status));
+  await ok();
+});

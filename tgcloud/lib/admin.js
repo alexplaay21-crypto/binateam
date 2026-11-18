@@ -4,7 +4,7 @@
 // в журнал выполняются одной командой.
 import * as E from './engine.js';
 import { SYS } from './sqlh.js';
-import { EDITABLE_SETTINGS_4 as EDITABLE_SETTINGS } from './ddl4.js';
+import { EDITABLE_SETTINGS_5 as EDITABLE_SETTINGS } from './ddl5.js';
 
 const NOW = '(SELECT now FROM v_now)';
 

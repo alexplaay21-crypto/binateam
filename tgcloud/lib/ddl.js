@@ -12,6 +12,7 @@ import { NOW, S, SYS, post, postDiamonds } from './sqlh.js';
 import { MIGRATION_2 } from './ddl2.js';
 import { MIGRATION_3 } from './ddl3.js';
 import { MIGRATION_4 } from './ddl4.js';
+import { MIGRATION_5 } from './ddl5.js';
 
 export { SYS };
 
@@ -701,4 +702,5 @@ export const MIGRATIONS = [
   { id: 2, statements: MIGRATION_2 },
   { id: 3, statements: MIGRATION_3 },
   { id: 4, statements: MIGRATION_4 },
+  { id: 5, statements: MIGRATION_5 },
 ];

@@ -45,7 +45,8 @@ export async function openPosition(db, uid, { tokenId, direction, stake, duratio
 export async function settleDue(db, { userId = null, limit = 20 } = {}) {
   const st = await settings(db);
   const due = await db.all(
-    `SELECT tp.*, COALESCE((SELECT price_x FROM price_ticks WHERE token_id = tp.token_id AND created_at <= tp.expires_at ORDER BY id DESC LIMIT 1), tp.entry_price) AS exit_x
+    `SELECT tp.*, (SELECT is_official FROM tokens WHERE id = tp.token_id) AS official,
+            COALESCE((SELECT price_x FROM price_ticks WHERE token_id = tp.token_id AND created_at <= tp.expires_at ORDER BY id DESC LIMIT 1), tp.entry_price) AS exit_x
      FROM trading_positions tp WHERE tp.status = 'open' AND tp.expires_at <= ${NOW} AND (:u IS NULL OR tp.user_id = :u)
      ORDER BY tp.expires_at LIMIT :n`,
     { ':u': userId, ':n': limit });
@@ -53,7 +54,7 @@ export async function settleDue(db, { userId = null, limit = 20 } = {}) {
   for (const p of due) {
     const move = ((p.exit_x - p.entry_price) * 10_000) / p.entry_price;
     let status, payout;
-    if (Math.abs(move) < st.trading_min_move_bps) { status = 'refund'; payout = p.stake; }
+    if (Math.abs(move) < (p.official ? 0.000001 : st.trading_min_move_bps)) { status = 'refund'; payout = p.stake; }
     else if ((p.direction === 'up') === (p.exit_x > p.entry_price)) { status = 'won'; payout = Math.floor((p.stake * (10_000 + p.payout_bps)) / 10_000); }
     else { status = 'lost'; payout = 0; }
     const r = await db.run(
@@ -101,7 +102,7 @@ export async function view(db, uid, { tokenId }) {
     config: {
       durations: TRADING_DURATIONS, payout_bps: st.trading_payout_bps, min: st.trading_min_stake_ubc, enabled: st.trading_enabled === 1,
       max: !a ? 0 : a.is_official ? Math.min(st.trading_max_stake_ubc, st.trading_official_max_ubc) : Math.min(st.trading_max_stake_ubc, Math.floor((a.real_bc * st.trading_max_pool_bps) / 10_000)),
-      min_move_bps: st.trading_min_move_bps, min_liquidity: st.trading_min_liquidity_ubc,
+      min_move_bps: a?.is_official ? 0 : st.trading_min_move_bps, min_liquidity: st.trading_min_liquidity_ubc,
     },
   };
 }

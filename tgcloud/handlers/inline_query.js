@@ -5,6 +5,7 @@
 import { api, db, InputFile } from 'sdk';
 import { WIDGET_HTML, publicState } from '../lib/widget.js';
 import { chartFileId, caption, keyboard } from '../lib/inlinecard.js';
+import { mmTick } from '../lib/mm.js';
 
 const INLINE_WIDGETS = false;
 
@@ -27,6 +28,7 @@ async function findTokens(term) {
 }
 
 export default async function (q) {
+  await mmTick(db).catch(() => {});
   const { ticker, amount } = parse(q.query);
   const tokens = await findTokens(ticker);
   const common = { inline_query_id: q.id, cache_time: 10, is_personal: false };

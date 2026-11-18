@@ -5,6 +5,7 @@ import { ADMIN_IDS } from '../lib/config.js';
 import { openPosition } from '../lib/trading.js';
 import { WIDGET_ERRORS, publicState } from '../lib/widget.js';
 import { chartFileId, caption, keyboard, amountsFrom } from '../lib/inlinecard.js';
+import { mmTick } from '../lib/mm.js';
 
 export default async function (cb) {
   const [kind, id, dir, amt, dur] = String(cb.data ?? '').split(':');
@@ -12,6 +13,7 @@ export default async function (cb) {
   let text, ok = false;
   try {
     const uid = await ensureUser(db, cb.from, { admin: ADMIN_IDS.includes(Number(cb.from?.id)) });
+    await mmTick(db).catch(() => {});
     const p = await openPosition(db, uid, {
       tokenId: Number(id), direction: dir === 'u' ? 'up' : 'down', stake: Number(amt) * 1_000_000, durationS: Number(dur),
       clientId: `cb${cb.id}`, source: 'inline',
