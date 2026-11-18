@@ -289,7 +289,7 @@ const SETTING_LABELS: Record<string, [string, 'bps' | 'ubc' | 'int' | 's' | 'boo
   transfer_daily_limit_ubc: ['Лимит переводов в сутки', 'ubc'], ref_bonus_ubc: ['Бонус за друга', 'ubc'], ref_bonus_vip_diamonds: ['Бонус VIP за друга, 💎', 'int'],
   ref_min_actions: ['Сделок друга для бонуса', 'int'], trading_enabled: ['Трейдинг включён (1/0)', 'bool'], trading_payout_bps: ['Выигрыш в трейдинге', 'bps'],
   trading_min_stake_ubc: ['Мин. ставка трейдинга', 'ubc'], trading_max_stake_ubc: ['Макс. ставка трейдинга', 'ubc'], trading_max_open: ['Открытых сделок на игрока', 'int'],
-  trading_min_move_bps: ['Мин. сдвиг цены для итога', 'bps'], trading_min_liquidity_ubc: ['Мин. ликвидность токена', 'ubc'], trading_max_pool_bps: ['Ставка от пула, макс.', 'bps'],
+  trading_min_move_bps: ['Мин. сдвиг цены для итога', 'bps'], trading_official_max_ubc: ['Макс. ставка по официальным', 'ubc'], trading_min_liquidity_ubc: ['Мин. ликвидность токена', 'ubc'], trading_max_pool_bps: ['Ставка от пула, макс.', 'bps'],
 };
 function show(v: number, t: string) {
   if (t === 'bps') return (v / 100).toString().replace('.', ',') + '%';

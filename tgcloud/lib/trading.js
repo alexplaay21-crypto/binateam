@@ -11,11 +11,11 @@ export const PRICE_X_SCALE = 1_000_000; // price_x = µBC × 10^6
 // Токены, по которым сейчас можно торговать.
 export async function assets(db) {
   return db.all(
-    `SELECT t.id, t.ticker, t.name, t.logo_v, t.is_verified, ${PRICE_X('p.')} AS price_x, p.real_bc,
+    `SELECT t.id, t.ticker, t.name, t.logo_v, t.is_verified, t.is_official, ${PRICE_X('p.')} AS price_x, p.real_bc,
             (SELECT v FROM platform_settings WHERE k = 'trading_min_liquidity_ubc') AS min_liq
      FROM tokens t JOIN token_pools p ON p.token_id = t.id
      WHERE t.is_hidden = 0 AND t.trading_off = 0 AND t.phase = 'listed'
-       AND p.real_bc >= (SELECT v FROM platform_settings WHERE k = 'trading_min_liquidity_ubc')
+       AND (t.is_official = 1 OR p.real_bc >= (SELECT v FROM platform_settings WHERE k = 'trading_min_liquidity_ubc'))
      ORDER BY t.is_verified DESC, p.real_bc DESC LIMIT 30`);
 }
 
@@ -95,7 +95,7 @@ export async function view(db, uid, { tokenId }) {
     assets: list, asset: a, points: pts, open, history, stats, wallet: w, now, scale: PRICE_X_SCALE,
     config: {
       durations: TRADING_DURATIONS, payout_bps: st.trading_payout_bps, min: st.trading_min_stake_ubc, enabled: st.trading_enabled === 1,
-      max: a ? Math.min(st.trading_max_stake_ubc, Math.floor((a.real_bc * st.trading_max_pool_bps) / 10_000)) : 0,
+      max: !a ? 0 : a.is_official ? Math.min(st.trading_max_stake_ubc, st.trading_official_max_ubc) : Math.min(st.trading_max_stake_ubc, Math.floor((a.real_bc * st.trading_max_pool_bps) / 10_000)),
       min_move_bps: st.trading_min_move_bps, min_liquidity: st.trading_min_liquidity_ubc,
     },
   };

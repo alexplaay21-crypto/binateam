@@ -186,3 +186,16 @@ test('свечи часового и дневного периода собир�
     assert.equal(c[c.length - 1].c, (await E.getToken(db, t.id)).last_price, tf + ': закрытие = текущая цена');
   }
 });
+
+test('официальный токен: трейдинг без порога ликвидности, ставка до 10 000 BC', async () => {
+  await E.ensureUser(db, { id: 6714200331 }, { admin: true });
+  const b = await E.createToken(db, 6714200331, { ticker: 'BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC }, id(), 0, { official: true });
+  assert.equal((await P.getPool(db, b.id)).real_bc, 0);
+  assert.ok((await TR.assets(db)).some((a) => a.id === b.id), 'виден в трейдинге сразу');
+  await E.adminAdjust(db, 6714200331, { userId: 3, currency: 'bc', delta: 20_000 * BC, reason: 'test', opId: id() });
+  await assert.rejects(TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 10_001 * BC, durationS: 60, clientId: id() }), { code: 'BET_TOO_LARGE' });
+  const p = await TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 1000 * BC, durationS: 60, clientId: id() });
+  assert.equal(p.stake, 1000 * BC);
+  await E.adminAction(db, 6714200331, { action: 'setting', key: 'trading_official_max_ubc', value: 50_000 * BC, opId: id() });
+  await ok();
+});
