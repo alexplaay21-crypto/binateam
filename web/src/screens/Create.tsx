@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Nav } from '../App';
 import { call, clientId, errorText, haptic, notify } from '../tg';
-import { bc, parseBC, parseInt10, qty, duration } from '../format';
+import { bc, parseBC, parseInt10, qty } from '../format';
 import { pickPhoto } from '../components/photo';
 import { Icon } from '../components/icons';
 
-const DURATIONS = [3600, 6 * 3600, 86400, 3 * 86400, 7 * 86400];
 
 export function Create({ nav }: { nav: Nav }) {
   const [ticker, setTicker] = useState('');
@@ -14,7 +13,6 @@ export function Create({ nav }: { nav: Nav }) {
   const [supply, setSupply] = useState('100000');
   const [price, setPrice] = useState('0,01');
   const [reserve, setReserve] = useState('50000');
-  const [dur, setDur] = useState(86400);
   const [logo, setLogo] = useState<string | null>(null);
   const [quote, setQuote] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +49,7 @@ export function Create({ nav }: { nav: Nav }) {
     try {
       const res = await call('app_create', {
         action: 'create', ticker: ticker.trim().toUpperCase(), name: name.trim(), description: desc.trim(),
-        supply: s, reserve: r, p0: p, ipoDurationS: dur, logo, clientId: clientId(),
+        supply: s, reserve: r, p0: p, logo, clientId: clientId(),
       });
       haptic('success');
       nav.reloadMe();
@@ -81,23 +79,21 @@ export function Create({ nav }: { nav: Nav }) {
           <div className="field"><label>Выпуск, шт</label><div className="input"><input inputMode="numeric" value={supply} onChange={(e) => setSupply(e.target.value)} /></div></div>
           <div className="field"><label>Цена за 1 токен</label><div className="input"><input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /><span>BC</span></div></div>
         </div>
-        <div className="field"><label>Оставить себе (резерв), шт</label><div className="input"><input inputMode="numeric" value={reserve} onChange={(e) => setReserve(e.target.value)} /></div>
-          <span className="hint small">Резерв заблокирован 7 дней после начала торгов. Остальное продаётся на первичной продаже по вашей цене.</span></div>
-        <div className="field"><label>Срок первичной продажи</label>
-          <div className="chips">{DURATIONS.map((d) => <button key={d} className={dur === d ? 'on' : ''} onClick={() => setDur(d)}>{duration(d)}</button>)}</div></div>
+        <div className="field"><label>Оставить себе, шт</label><div className="input"><input inputMode="numeric" value={reserve} onChange={(e) => setReserve(e.target.value)} /></div>
+          <span className="hint small">Ваши токены заблокированы 7 дней. Остальные сразу поступают в продажу: игроки покупают их по стартовой цене, и цена растёт с каждой покупкой.</span></div>
       </div>
       <div className="card">
         <h3>Итог</h3>
         <div className="grid2 num">
           <div className="stat"><div className="hint">Вы выкупаете выпуск за</div><b>{calc ? bc(calc.cost) : '—'} BC</b></div>
           <div className="stat"><div className="hint">Diamonds</div><b>{diamonds} 💎</b></div>
-          <div className="stat"><div className="hint">На первичной продаже</div><b>{calc ? qty(Math.max(0, calc.offering)) : '—'} шт</b></div>
-          <div className="stat"><div className="hint">Ваш резерв</div><b>{r != null ? qty(r) : '—'} шт</b></div>
+          <div className="stat"><div className="hint">В продаже</div><b>{calc ? qty(Math.max(0, calc.offering)) : '—'} шт</b></div>
+          <div className="stat"><div className="hint">У вас</div><b>{r != null ? qty(r) : '—'} шт</b></div>
         </div>
-        <div className="notice" style={{ marginTop: 10 }}>BC за выпуск сжигаются. Вы вернёте их, продавая токены на первичной продаже и бирже. Доход не гарантирован. Предложение фиксируется навсегда.</div>
+        <div className="notice" style={{ marginTop: 10 }}>Вы выкупаете весь выпуск по стартовой цене — эти BC сжигаются. Вернуть их можно, продавая свои токены, когда их покупают другие. Доход не гарантирован. Количество токенов фиксируется навсегда.</div>
         {(err || problem) && <div className="err">{err || problem}</div>}
         <button className="btn" disabled={!!problem || busy} onClick={submit}>Выпустить ${ticker || '…'}</button>
-        <div className="hint small" style={{ marginTop: 6 }}>Первые 2 токена бесплатно, 3–5-й — 29 💎, далее — 99 💎.</div>
+        <div className="hint small" style={{ marginTop: 6 }}>Первые {me.config.free_tokens} токена бесплатно (VIP — {me.config.free_tokens_vip}), дальше — 29 💎 и 99 💎.</div>
       </div>
     </>
   );

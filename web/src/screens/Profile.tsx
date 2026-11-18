@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Nav } from '../App';
-import { call, clientId, errorText, haptic, notify } from '../tg';
+import { call, clientId, errorText, haptic, notify, tg } from '../tg';
 import { bc, qty, dateTime, duration, pct, changeClass, KIND_LABEL } from '../format';
 import { Logo } from '../components/Logo';
 import { TokenName, TokenRow } from '../components/TokenRow';
+import { UserName } from '../components/User';
 
 export function Faucet({ nav, onDone }: { nav: Nav; onDone?: () => void }) {
   const f = nav.me.faucet;
@@ -24,7 +25,7 @@ export function Faucet({ nav, onDone }: { nav: Nav; onDone?: () => void }) {
   return (
     <div className="card row">
       <div className="col">
-        <b>🎁 Бонус {bc(nav.me.config.faucet_amount)} BC каждые 3 часа</b>
+        <b>🎁 Бонус {bc(f.amount)} BC каждые {Math.round(f.period / 3600)} ч{nav.me.user.vip ? ' 👑' : ''}</b>
         <span className="hint small">{left > 0 ? `Следующий через ${duration(left)}` : `Доступно: ${bc(f.available)} BC`}</span>
       </div>
       <button className="btn sm" disabled={left > 0 || busy} onClick={claim}>Забрать</button>
@@ -38,7 +39,7 @@ export function skinColors(skins: any[], id: string | null) {
 }
 
 const FILTERS = [['', 'Все'], ['trade_buy', 'Покупки'], ['trade_sell', 'Продажи'], ['fee', 'Комиссии'], ['faucet', 'Бонусы'], ['bet', 'Прогнозы']];
-const SECTIONS = [['assets', 'Активы'], ['orders', 'Заявки'], ['history', 'История'], ['style', 'Оформление']];
+const SECTIONS = [['assets', 'Активы'], ['friends', 'Друзья'], ['history', 'История'], ['style', 'Стиль']];
 
 export function Profile({ nav }: { nav: Nav }) {
   const [d, setD] = useState<any>(null);
@@ -59,25 +60,28 @@ export function Profile({ nav }: { nav: Nav }) {
   const name = u.first_name || (u.username ? '@' + u.username : 'Игрок');
   return (
     <>
-      <div className="card hero" style={{ textAlign: 'center' }}>
-        <div className="ring" style={colors ? ({ '--a': colors.a, '--b': colors.b } as any) : undefined}>
+      <div className={'card hero' + (u.vip ? ' vipbg' : '')} style={{ textAlign: 'center' }}>
+        <div className="ring" style={colors ? ({ '--a': colors.a, '--b': colors.b } as any) : u.vip ? ({ '--a': '#f5c542', '--b': '#e45fa2' } as any) : undefined}>
           <div className="logo lg" style={{ background: 'var(--glass-strong)', color: 'var(--accent)', fontSize: 22 }}>{name.replace('@', '').slice(0, 1).toUpperCase()}</div>
         </div>
-        <div className="mid" style={{ marginTop: 8 }}>{name}</div>
-        <div className="hint small">{u.username ? '@' + u.username + ' · ' : ''}ID {u.id}{u.is_admin ? ' · администратор' : ''}</div>
+        <div className="mid" style={{ marginTop: 8 }}>{name}{u.vip ? ' 👑' : ''}</div>
+        <div className="hint small">{u.username ? '@' + u.username + ' · ' : ''}ID {u.id}{u.vip ? ' · VIP' : ''}{u.is_admin ? ' · админ' : ''}</div>
         <div className="sep" />
-        <div className="hint">Баланс</div>
         <div className="big num">{bc(w.bc)} <span className="hint" style={{ fontSize: 16 }}>BC</span></div>
-        <div className="grid3" style={{ marginTop: 10, textAlign: 'left' }}>
-          <div className="stat"><div className="hint">Свободно</div><b className="num">{bc(w.bc - w.bc_reserved)}</b></div>
-          <div className="stat"><div className="hint">В заявках</div><b className="num">{bc(w.bc_reserved)}</b></div>
-          <div className="stat"><div className="hint">Diamonds</div><b className="num">{qty(w.diamonds)} 💎</b></div>
-        </div>
-        <div className="grid2" style={{ marginTop: 12 }}>
-          <button className="btn" onClick={() => nav.open({ name: 'shop' })}>Купить 💎</button>
-          <button className="btn ghost" onClick={() => nav.open({ name: 'create' })}>Создать токен</button>
+        <div className="hint small num">токены ≈ {bc(d.portfolio.value)} BC · {qty(w.diamonds)} 💎</div>
+        <div className="grid3" style={{ marginTop: 14 }}>
+          <button className="btn sm" onClick={() => nav.open({ name: 'send' })}>Перевести</button>
+          <button className="btn ghost sm" onClick={() => nav.open({ name: 'shop' })}>Магазин</button>
+          <button className="btn ghost sm" onClick={() => nav.open({ name: 'create' })}>Свой токен</button>
         </div>
       </div>
+      {!u.vip && (
+        <button className="card row" style={{ width: '100%', border: 0, textAlign: 'left', color: 'inherit' }} onClick={() => nav.open({ name: 'shop' })}>
+          <div className="col"><b>👑 VIP навсегда — {nav.me.config.vip_price} 💎</b><span className="hint small">Без комиссии · бонус {bc(nav.me.config.faucet_amount_vip)} BC · до {nav.me.config.free_tokens_vip} токенов бесплатно</span></div>
+          <span className="badge accent">Купить</span>
+        </button>
+      )}
+      {u.is_admin && <button className="btn ghost" style={{ marginBottom: 12 }} onClick={() => nav.open({ name: 'admin' })}>🛡 Админ-панель</button>}
       <Faucet nav={nav} onDone={load} />
       <div className="tabs">{SECTIONS.map(([k, l]) => <button key={k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}</div>
 
@@ -118,17 +122,44 @@ export function Profile({ nav }: { nav: Nav }) {
         </>
       )}
 
-      {sec === 'orders' && (
-        <div className="card">
-          <h3>Открытые заявки</h3>
-          {d.orders.length ? <div className="list">{d.orders.map((o: any) => (
-            <div key={o.id} className="trow">
-              <div className="grow"><div className="name"><span className={o.side === 'buy' ? 'up' : 'down'}>{o.side === 'buy' ? 'Покупка' : 'Продажа'}</span> ${o.ticker}</div>
-                <div className="sub num">{qty(o.qty - o.filled)} из {qty(o.qty)} по {bc(o.price)} BC</div></div>
-              <button className="btn ghost sm" onClick={() => cancel(o.id)}>Отменить</button>
+      {sec === 'friends' && (
+        <>
+          <div className="card">
+            <h3>Пригласи друга</h3>
+            <div className="hint" style={{ marginBottom: 10 }}>За каждого друга, который сделает 3 сделки, — <b>{bc(nav.me.config.ref_bonus)} BC</b>{u.vip ? <> и <b>{nav.me.config.ref_bonus_vip_diamonds} 💎</b> (VIP)</> : <>. VIP получает ещё {nav.me.config.ref_bonus_vip_diamonds} 💎</>}.</div>
+            <div className="input" style={{ marginBottom: 10 }}><input readOnly value={d.ref_link} onFocus={(e) => e.target.select()} /></div>
+            <div className="grid2">
+              <button className="btn" onClick={() => tg?.openTelegramLink ? tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(d.ref_link)}&text=${encodeURIComponent('Заходи в Bina Play — биржу игровых токенов!')}`) : null}>Поделиться</button>
+              <button className="btn ghost" onClick={() => { navigator.clipboard?.writeText(d.ref_link).then(() => notify('Ссылка скопирована'), () => {}); }}>Скопировать</button>
             </div>
-          ))}</div> : <div className="empty">Нет открытых заявок</div>}
-        </div>
+            <div className="grid3 num" style={{ marginTop: 12 }}>
+              <div className="stat"><div className="hint">Пришло</div><b>{d.ref.invited}</b></div>
+              <div className="stat"><div className="hint">Активных</div><b>{d.ref.rewarded}</b></div>
+              <div className="stat"><div className="hint">Заработано</div><b>{bc(d.ref.earned_bc)}{d.ref.earned_diamonds ? ` +${d.ref.earned_diamonds}💎` : ''}</b></div>
+            </div>
+          </div>
+          <div className="card">
+            <h3 className="row">Переводы <button className="btn sm" onClick={() => nav.open({ name: 'send' })}>Перевести</button></h3>
+            {d.transfers.length ? d.transfers.map((t: any) => {
+              const out = t.from_id === u.id;
+              return (
+                <div key={t.id} className="kv num small">
+                  <span>{out ? '→' : '←'} <UserName u={{ username: out ? t.to_username : t.from_username, id: out ? t.to_id : t.from_id }} /> · {dateTime(t.created_at)}</span>
+                  <span className={out ? '' : 'up'}>{out ? '−' : '+'}{t.asset === 'bc' ? `${bc(t.amount)} BC` : `${qty(t.amount)} $${t.ticker}`}</span>
+                </div>
+              );
+            }) : <div className="empty">Переводов пока не было</div>}
+          </div>
+          {d.orders.length > 0 && (
+            <div className="card">
+              <h3>Старые заявки</h3>
+              {d.orders.map((o: any) => (
+                <div key={o.id} className="kv num small"><span>{o.side === 'buy' ? 'Покупка' : 'Продажа'} ${o.ticker} {qty(o.qty - o.filled)} × {bc(o.price)}</span>
+                  <button className="btn ghost sm" onClick={() => cancel(o.id)}>Отменить</button></div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {sec === 'history' && (

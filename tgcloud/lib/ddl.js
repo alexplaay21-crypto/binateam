@@ -10,6 +10,7 @@
 
 import { NOW, S, SYS, post, postDiamonds } from './sqlh.js';
 import { MIGRATION_2 } from './ddl2.js';
+import { MIGRATION_3 } from './ddl3.js';
 
 export { SYS };
 
@@ -697,4 +698,5 @@ function seed() {
 export const MIGRATIONS = [
   { id: 1, statements: [...schema, ...triggers, ...seed()] },
   { id: 2, statements: MIGRATION_2 },
+  { id: 3, statements: MIGRATION_3 },
 ];

@@ -2,11 +2,19 @@
 import * as E from './engine.js';
 import { PREDICTION_DURATIONS, ROUND_STEP_S, SYS } from './ddl.js';
 import { quoteTicker, isValidTicker } from './tickers.js';
+import * as P from './pool.js';
+import * as SO from './social.js';
+import * as TR from './trading.js';
+import { BOT_USERNAME } from './config.js';
 
 const NOW = '(SELECT now FROM v_now)';
-const P24 = (t) => `COALESCE((SELECT price FROM trades WHERE token_id = ${t}.id AND created_at <= ${NOW} - 86400 ORDER BY id DESC LIMIT 1), ${t}.p0)`;
+const P24 = (t) => `COALESCE((SELECT price FROM deals WHERE token_id = ${t}.id AND created_at <= ${NOW} - 86400 ORDER BY id DESC LIMIT 1), ${t}.p0)`;
 
-export const STAR_PACKS = { p29: 29, p99: 99, p199: 199, p499: 499 };
+// Пакеты Diamonds: d — сколько 💎, s — цена в Stars.
+export const STAR_PACKS = {
+  p29: { d: 29, s: 29 }, p59: { d: 59, s: 49 }, p99: { d: 99, s: 89 },
+  p199: { d: 199, s: 169 }, p499: { d: 499, s: 399 }, p999: { d: 999, s: 799 },
+};
 
 const CHANGE = (r) => Math.round((r.last_price - r.price_24h) * 10000 / r.price_24h);
 
@@ -27,7 +35,7 @@ async function attachSparks(db, list) {
 
 const TOKEN_COLS = (t = 't') => `${t}.id, ${t}.ticker, ${t}.name, ${t}.phase, ${t}.last_price, ${t}.p0, ${t}.total_supply,
   ${t}.is_official, ${t}.is_verified, ${t}.logo_v, ${t}.created_at, ${t}.ipo_remaining, ${t}.ipo_supply, ${t}.ipo_ends_at, ${P24(t)} AS price_24h,
-  COALESCE((SELECT sum(notional) FROM trades WHERE token_id = ${t}.id AND created_at > ${NOW} - 86400), 0) AS volume_24h`;
+  COALESCE((SELECT sum(notional) FROM deals WHERE token_id = ${t}.id AND created_at > ${NOW} - 86400), 0) AS volume_24h`;
 
 async function portfolio(db, uid) {
   const r = await db.get(
@@ -45,13 +53,18 @@ export async function me(db, uid) {
     E.getUser(db, uid), E.wallet(db, uid), E.faucetStatus(db, uid), portfolio(db, uid), E.settings(db), E.creationFee(db, uid),
   ]);
   return {
-    user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, is_banned: !!user.is_banned },
+    user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, is_banned: !!user.is_banned,
+            vip: user.vip_until > faucet.now, skin: user.skin },
+    ref_link: `https://t.me/${BOT_USERNAME}?startapp=ref_${user.id}`,
     wallet, faucet, portfolio: pf, next_token_fee: fee.fee, tokens_created: fee.n,
     config: {
       taker_bps: st.taker_bps, maker_bps: st.maker_bps, ipo_fee_bps: st.ipo_fee_bps, pred_fee_bps: st.pred_fee_bps,
       min_order_ubc: st.min_order_ubc, durations: PREDICTION_DURATIONS, round_step_s: ROUND_STEP_S,
       faucet_amount: st.faucet_amount, faucet_period_s: st.faucet_period_s, ipo_min_s: st.ipo_min_s, ipo_max_s: st.ipo_max_s,
       min_supply: st.min_supply, max_supply: st.max_supply, star_packs: STAR_PACKS,
+      amm_fee_bps: st.amm_fee_bps, amm_max_impact_bps: st.amm_max_impact_bps, vip_price: st.vip_price, faucet_amount_vip: st.faucet_amount_vip,
+      free_tokens: st.free_tokens, free_tokens_vip: st.free_tokens_vip, ref_bonus: st.ref_bonus_ubc, ref_bonus_vip_diamonds: st.ref_bonus_vip_diamonds,
+      transfer_fee_bps: st.transfer_fee_bps, trading_payout_bps: st.trading_payout_bps,
     },
   };
 }
@@ -64,8 +77,8 @@ export async function home(db, uid) {
   const gainers = listed.filter((t) => t.change_bps > 0).sort((a, b) => b.change_bps - a.change_bps).slice(0, 5);
   const losers = listed.filter((t) => t.change_bps < 0).sort((a, b) => a.change_bps - b.change_bps).slice(0, 5);
   const trades = await db.all(
-    `SELECT tr.id, tr.price, tr.qty, tr.taker_side, tr.created_at, t.ticker, t.id AS token_id
-     FROM trades tr JOIN tokens t ON t.id = tr.token_id WHERE t.is_hidden = 0 ORDER BY tr.id DESC LIMIT 15`,
+    `SELECT d.key AS id, d.price, d.qty, d.side AS taker_side, d.created_at, t.ticker, t.id AS token_id
+     FROM deals d JOIN tokens t ON t.id = d.token_id WHERE t.is_hidden = 0 ORDER BY d.created_at DESC LIMIT 15`,
   );
   const [wallet, pf] = await Promise.all([E.wallet(db, uid), portfolio(db, uid)]);
   await attachSparks(db, [...popular, ...gainers, ...losers]);
@@ -91,55 +104,75 @@ export async function tokensOld(db, input) {
 
 export async function token(db, uid, input) {
   const tokenId = Number(input.id);
-  await E.maybeList(db, tokenId);
-  await E.expireOrders(db, tokenId);
-  await E.settleDue(db, { tokenId, limit: 10 });
+  const me = await E.getUser(db, uid);
   const t = await db.get(
-    `SELECT t.*, NULL AS logo, u.username AS creator_username, u.first_name AS creator_name, ${P24('t')} AS price_24h,
-       COALESCE((SELECT sum(qty) FROM trades WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_qty_24h,
-       COALESCE((SELECT sum(notional) FROM trades WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_24h,
-       (SELECT count(*) FROM trades WHERE token_id = t.id AND created_at > ${NOW} - 3600) AS trades_1h,
+    `SELECT t.*, NULL AS logo, u.username AS creator_username, u.first_name AS creator_name, u.vip_until > ${NOW} AS creator_vip,
+       ${P24('t')} AS price_24h,
+       COALESCE((SELECT sum(qty) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_qty_24h,
+       COALESCE((SELECT sum(notional) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 86400), 0) AS volume_24h,
        (SELECT count(*) FROM token_holders WHERE token_id = t.id AND balance > 0) AS holders,
+       COALESCE((SELECT sum(diamonds) FROM token_promotions WHERE token_id = t.id AND ends_at > ${NOW}), 0) AS promo,
        ${NOW} AS now
-     , COALESCE((SELECT sum(diamonds) FROM token_promotions WHERE token_id = t.id AND ends_at > ${NOW}), 0) AS promo
      FROM tokens t LEFT JOIN users u ON u.id = t.creator_id WHERE t.id = :t AND (t.is_hidden = 0 OR :admin = 1)`,
-    { ':t': tokenId, ':admin': (await E.getUser(db, uid))?.is_admin ? 1 : 0 },
+    { ':t': tokenId, ':admin': me?.is_admin ? 1 : 0 },
   );
   if (!t) throw new E.BinaError('TOKEN_NOT_FOUND');
-  const [book, trades, candles, position, orders, bets, rounds, w] = await Promise.all([
-    E.orderBook(db, tokenId, 15),
-    db.all('SELECT id, price, qty, taker_side, created_at FROM trades WHERE token_id = :t ORDER BY id DESC LIMIT 30', { ':t': tokenId }),
-    E.candles(db, tokenId, input.tf ?? '15m', 80),
+  const st = await E.settings(db);
+  const [pool, deals, candles, position, w, openTrade] = await Promise.all([
+    P.getPool(db, tokenId),
+    db.all('SELECT key AS id, price, qty, notional, side, created_at FROM deals WHERE token_id = :t ORDER BY created_at DESC, id DESC LIMIT 20', { ':t': tokenId }),
+    E.candles(db, tokenId, input.tf ?? '1h', 60),
     db.get(`SELECT balance, reserved, CASE WHEN locked_until > ${NOW} THEN locked ELSE 0 END AS locked, locked_until
             FROM token_holders WHERE token_id = :t AND user_id = :u`, { ':t': tokenId, ':u': uid }),
-    db.all(`SELECT * FROM orders WHERE token_id = :t AND user_id = :u AND status = 'open' ORDER BY id DESC`, { ':t': tokenId, ':u': uid }),
-    db.all(`SELECT p.*, r.starts_at, r.up_pool, r.down_pool, r.duration_s FROM predictions p JOIN prediction_rounds r ON r.id = p.round_id
-            WHERE p.token_id = :t AND p.user_id = :u ORDER BY p.id DESC LIMIT 10`, { ':t': tokenId, ':u': uid }),
-    db.all(`SELECT duration_s, starts_at, ends_at, up_pool, down_pool FROM prediction_rounds
-            WHERE token_id = :t AND status = 'open' AND starts_at > ${NOW}`, { ':t': tokenId }),
     E.wallet(db, uid),
+    db.get(`SELECT count(*) AS n FROM trading_positions WHERE token_id = :t AND user_id = :u AND status = 'open'`, { ':t': tokenId, ':u': uid }),
   ]);
-  const traders = await db.get(
-    `SELECT count(*) AS n FROM (SELECT buyer_id FROM trades WHERE token_id = :t AND created_at > ${NOW} - 3600
-                               UNION SELECT seller_id FROM trades WHERE token_id = :t AND created_at > ${NOW} - 3600)`,
-    { ':t': tokenId },
-  );
-  const st = await E.settings(db);
-  const predOk = t.phase === 'listed' && t.trades_1h >= st.pred_min_trades && traders.n >= st.pred_min_traders;
+  const vip = me.vip_until > t.now;
+  let limits = null;
+  if (pool) {
+    const X = pool.virtual_bc + pool.real_bc, r = Math.sqrt(1 + st.amm_max_impact_bps / 10_000);
+    const fee = vip ? 0 : st.amm_fee_bps;
+    limits = {
+      max_buy_bc: Math.floor(Math.floor(X * (r - 1) * 0.999) * (10_000 + fee) / 10_000),
+      max_sell_qty: Math.floor(pool.tokens * (r - 1) * 0.999),
+      fee_bps: fee, pool_tokens: pool.tokens, pool_bc: pool.real_bc,
+    };
+  }
   return {
-    token: { ...t, market_cap: t.last_price * t.total_supply, change_bps: Math.round((t.last_price - t.price_24h) * 10000 / t.price_24h) },
-    book, trades, candles, tf: input.tf ?? '15m', position: position ?? { balance: 0, reserved: 0, locked: 0 }, orders, wallet: w,
-    prediction: {
-      available: predOk, min_trades: st.pred_min_trades, min_traders: st.pred_min_traders, trades_1h: t.trades_1h, traders_1h: traders.n,
-      max_bet: Math.min(st.max_bet_ubc, Math.floor(t.volume_24h * st.pred_max_volume_bps / 10000)),
-      next_start: (Math.floor(t.now / ROUND_STEP_S) + 1) * ROUND_STEP_S, rounds, bets,
-    },
+    token: { ...t, market_cap: t.last_price * t.total_supply, change_bps: CHANGE(t) },
+    pool: !!pool, limits, deals, candles, tf: input.tf ?? '1h', wallet: w, vip,
+    position: position ?? { balance: 0, reserved: 0, locked: 0 }, trading_open: openTrade.n > 0,
   };
+}
+
+export async function swapApi(db, uid, input) {
+  if (input.action === 'quote') {
+    try { return { quote: await P.quote(db, uid, input) }; } catch (e) { if (e.code) return { error: e.code }; throw e; }
+  }
+  const r = await P.swap(db, uid, input);
+  SO.tryReferral(db, uid).catch(() => {});
+  return r;
+}
+
+export async function tradingApi(db, uid, input) {
+  if (input.action === 'open') return { position: await TR.openPosition(db, uid, input) };
+  return TR.view(db, uid, input);
+}
+
+export async function social(db, uid, input) {
+  switch (input.action) {
+    case 'find': { const u = await SO.findUser(db, input.to); return { user: { id: u.id, username: u.username, first_name: u.first_name } }; }
+    case 'transfer': return SO.transfer(db, uid, input);
+    case 'owner': return SO.transferOwnership(db, uid, input);
+    case 'vip': return { vip: await SO.buyVip(db, uid, String(input.clientId ?? '')) };
+    case 'ref': return SO.referralStats(db, uid);
+    default: throw new E.BinaError('BAD_ACTION');
+  }
 }
 
 export async function order(db, uid, input) {
   switch (input.action) {
-    case 'place': return E.placeOrder(db, uid, input);
+    case 'place': throw new E.BinaError('ORDERBOOK_DISABLED'); // стакан заменён пулом
     case 'cancel': return { order: await E.cancelOrder(db, uid, input.orderId) };
     case 'ipo': return { purchase: await E.ipoBuy(db, uid, Number(input.tokenId), input.qty, String(input.clientId ?? '')) };
     default: throw new E.BinaError('BAD_ACTION');
@@ -174,6 +207,7 @@ export async function create(db, uid, input) {
   const quote = quoteTicker(ticker);
   const fee = await E.creationFee(db, uid);
   if (input.action !== 'create') {
+    // предварительный расчёт
     return { ticker, valid: !!quote, taken: !!taken, ticker_diamonds: quote?.diamonds ?? null, factors: quote?.factors ?? [], creation_diamonds: fee.fee };
   }
   if (!quote) throw new E.BinaError('BAD_TICKER');
@@ -204,8 +238,8 @@ export async function market(db, input) {
   const page = Math.max(0, Number(input.page) || 0);
   const base = `SELECT ${TOKEN_COLS()},
       COALESCE((SELECT sum(diamonds) FROM token_promotions WHERE token_id = t.id AND ends_at > ${NOW}), 0) AS promo,
-      COALESCE((SELECT sum(notional) FROM trades WHERE token_id = t.id AND created_at > ${NOW} - 3600), 0) AS volume_1h,
-      (SELECT count(*) FROM trades WHERE token_id = t.id AND created_at > ${NOW} - 3600) AS trades_1h
+      COALESCE((SELECT sum(notional) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 3600), 0) AS volume_1h,
+      (SELECT count(*) FROM deals WHERE token_id = t.id AND created_at > ${NOW} - 3600) AS trades_1h
     FROM tokens t WHERE t.is_hidden = 0 AND (:q = '' OR t.ticker LIKE :q || '%' OR upper(t.name) LIKE '%' || :q || '%')`;
   let order, limit = 30, offset = page * 30;
   if (tab === 'top') { order = 'promo DESC, volume_24h DESC, t.is_verified DESC, t.id ASC'; limit = 50; offset = 0; }
@@ -235,7 +269,12 @@ export async function profile(db, uid, input) {
     db.all(`SELECT ${TOKEN_COLS()} FROM tokens t WHERE t.creator_id = :u ORDER BY t.id DESC`, { ':u': uid }),
   ]);
   return {
-    ...w, user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, skin: user.skin, created_at: user.created_at },
+    ...w, user: { id: user.id, username: user.username, first_name: user.first_name, is_admin: !!user.is_admin, skin: user.skin, created_at: user.created_at,
+                  vip: user.vip_until > (await db.get(`SELECT ${NOW} AS n`)).n },
+    ref: await SO.referralStats(db, uid), ref_link: `https://t.me/${BOT_USERNAME}?startapp=ref_${uid}`,
+    transfers: await db.all(`SELECT tr.*, t.ticker, uf.username AS from_username, ut.username AS to_username FROM transfers tr
+      LEFT JOIN tokens t ON t.id = tr.token_id LEFT JOIN users uf ON uf.id = tr.from_id LEFT JOIN users ut ON ut.id = tr.to_id
+      WHERE tr.from_id = :u OR tr.to_id = :u ORDER BY tr.id DESC LIMIT 20`, { ':u': uid }),
     owned: items.map((i) => i.item_id), skins, created: created.map((t) => ({ ...t, change_bps: CHANGE(t) })),
   };
 }
@@ -250,7 +289,9 @@ export async function shop(db, uid, input) {
     db.all('SELECT item_id FROM user_items WHERE user_id = :u', { ':u': uid }),
     E.wallet(db, uid),
   ]);
+  const vip = await db.get(`SELECT vip_until > ${NOW} AS v FROM users WHERE id = :u`, { ':u': uid });
   return {
+    vip: !!vip?.v, vip_price: st.vip_price,
     items: items.filter((i) => i.kind !== 'bc' || st.shop_bc_enabled === 1), owned: owned.map((o) => o.item_id), wallet: w,
     star_packs: STAR_PACKS, promo_min: st.promo_min_diamonds, promo_duration_s: st.promo_duration_s,
   };

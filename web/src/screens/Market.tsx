@@ -43,8 +43,7 @@ export function Market({ nav }: { nav: Nav }) {
         </div>
       )}
       <div className="card">
-        {tab === 'top' && <div className="hint small" style={{ marginBottom: 6 }}>Места в ТОП-50 занимают токены с рекламой: больше 💎 — выше место. Реклама — на странице токена.</div>}
-        {tab === 'hot' && <div className="hint small" style={{ marginBottom: 6 }}>Самые активные торги за последний час.</div>}
+        <div className="hint small" style={{ marginBottom: 6 }}>Нажмите на токен, чтобы купить или продать.{tab === 'top' ? ' Места в ТОП-50 — по рекламе (💎 на странице токена).' : ''}</div>
         {items == null ? <div className="loading">{err || 'Загрузка…'}</div> : shown.length === 0 ? <div className="empty">Ничего не найдено</div> : (
           <div className="list">{shown.map((t, i) => (
             <TokenRow key={t.id} t={t} onOpen={openToken} rank={tab === 'top' || tab === 'hot' ? i + 1 : undefined}

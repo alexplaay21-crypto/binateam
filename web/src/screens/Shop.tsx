@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Nav } from '../App';
 import { call, clientId, errorText, haptic, notify, tg } from '../tg';
-import { qty, duration } from '../format';
+import { qty, duration, bc } from '../format';
 import { skinColors } from './Profile';
 
 export function Shop({ nav }: { nav: Nav }) {
@@ -30,10 +30,28 @@ export function Shop({ nav }: { nav: Nav }) {
   };
   if (!d) return <div className="loading">{err || 'Загрузка…'}</div>;
   const bcItems = d.items.filter((i: any) => i.kind === 'bc');
+  const cfg = nav.me.config;
+  const buyVip = () => {
+    const run = async () => {
+      try { await call('app_social', { action: 'vip', clientId: clientId() }); haptic('success'); notify('Добро пожаловать в VIP 👑'); load(); nav.reloadMe(); }
+      catch (e) { haptic('error'); notify(errorText(e)); }
+    };
+    if (tg?.showConfirm) tg.showConfirm(`Купить VIP навсегда за ${d.vip_price} 💎?`, (ok: boolean) => { if (ok) run(); });
+    else run();
+  };
   const skins = d.items.filter((i: any) => i.kind === 'skin');
   return (
     <>
       <div className="title">Магазин</div>
+      <div className="card hero vipcard">
+        <div className="row"><b style={{ fontSize: 18 }}>👑 VIP навсегда</b><span className="badge accent">{d.vip_price} 💎</span></div>
+        <div className="list" style={{ margin: '8px 0 12px' }}>
+          {['Без комиссии на покупку, продажу и переводы', `Бонус ${bc(cfg.faucet_amount_vip)} BC каждые 4 часа вместо ${bc(cfg.faucet_amount)}`,
+            `До ${cfg.free_tokens_vip} своих токенов бесплатно`, 'Премиальный фон профиля и 👑 рядом с ником',
+            `За друга — ${bc(cfg.ref_bonus)} BC + ${cfg.ref_bonus_vip_diamonds} 💎`, 'Переводы сразу, без ожидания 3 дней'].map((x) => <div key={x} className="kv small"><span>✓ {x}</span></div>)}
+        </div>
+        {d.vip ? <div className="badge accent">У вас уже есть VIP 👑</div> : <button className="btn" onClick={buyVip}>Купить VIP за {d.vip_price} 💎</button>}
+      </div>
       <div className="card hero">
         <div className="row"><div className="col"><span className="hint">Ваши Diamonds</span><span className="big num">{qty(d.wallet.diamonds)} 💎</span></div></div>
         <div className="sep" />
@@ -41,7 +59,8 @@ export function Shop({ nav }: { nav: Nav }) {
         <div className="grid2">
           {Object.entries(d.star_packs).map(([k, v]: any) => (
             <button key={k} className="tile" onClick={() => buyStars(k)}>
-              <b style={{ fontSize: 18 }}>{v} 💎</b><span className="hint small">{v} ⭐ Stars</span>
+              <b style={{ fontSize: 18 }}>{v.d} 💎</b>
+              <span className="hint small">{v.s} ⭐ Stars{v.d > v.s ? <span className="up"> · выгода {Math.round((1 - v.s / v.d) * 100)}%</span> : null}</span>
             </button>
           ))}
         </div>

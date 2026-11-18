@@ -12,3 +12,6 @@ export const ADMIN_IDS = [6714200331];
 
 // Адрес Mini App на платформе.
 export const MINI_APP_URL = 'https://app9098990437.tgcloud.ai/';
+
+// Имя бота (для реферальных ссылок и инлайн-режима).
+export const BOT_USERNAME = 'binaiobot';

@@ -7,7 +7,9 @@ export function endpoint(fn) {
   return async function (input, ctx) {
     try {
       const tgUser = ctx.initData?.user;
-      const uid = await ensureUser(db, tgUser, { admin: ADMIN_IDS.includes(Number(tgUser?.id)) });
+      const sp = String(ctx.initData?.start_param ?? '');
+      const ref = /^ref_(\d+)$/.exec(sp)?.[1] ?? null;
+      const uid = await ensureUser(db, tgUser, { admin: ADMIN_IDS.includes(Number(tgUser?.id)), ref });
       return await fn(db, uid, input ?? {}, ctx);
     } catch (e) {
       const be = toBinaError(e);

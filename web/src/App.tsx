@@ -8,21 +8,25 @@ import { Profile } from './screens/Profile';
 import { Create } from './screens/Create';
 import { Shop } from './screens/Shop';
 import { Admin } from './screens/Admin';
+import { Trading } from './screens/Trading';
+import { Send } from './screens/Send';
 
-type TabName = 'home' | 'market' | 'shop' | 'profile' | 'admin';
+type TabName = 'home' | 'market' | 'trading' | 'shop' | 'profile';
 export type Route =
-  | { name: TabName }
+  | { name: TabName; tokenId?: number }
   | { name: 'token'; id: number }
   | { name: 'create' }
-  | { name: 'top50' };
+  | { name: 'top50' }
+  | { name: 'admin' }
+  | { name: 'send'; tokenId?: number };
 export type Nav = { open: (r: Route) => void; back: () => void; me: any; reloadMe: () => void };
 
-const TABS: { name: TabName; label: string; icon: string; admin?: boolean }[] = [
+const TABS: { name: TabName; label: string; icon: string }[] = [
   { name: 'home', label: 'Главная', icon: 'home' },
   { name: 'market', label: 'Рынок', icon: 'market' },
+  { name: 'trading', label: 'Трейдинг', icon: 'trade' },
   { name: 'shop', label: 'Магазин', icon: 'shop' },
   { name: 'profile', label: 'Профиль', icon: 'profile' },
-  { name: 'admin', label: 'Админ', icon: 'admin', admin: true },
 ];
 const TAB_NAMES = new Set(TABS.map((t) => t.name));
 
@@ -60,7 +64,12 @@ function FloatingNav({ tabs, selected, onSelect }: { tabs: typeof TABS; selected
 }
 
 export function App() {
-  const [stack, setStack] = useState<Route[]>([{ name: 'home' }]);
+  const [stack, setStack] = useState<Route[]>(() => {
+    // Ссылки вида t.me/binaiobot?startapp=trade_5 открывают трейдинг по токену.
+    const sp = String(tg?.initDataUnsafe?.start_param ?? '');
+    const m = /^trade_(\d+)$/.exec(sp);
+    return m ? [{ name: 'trading', tokenId: Number(m[1]) }] : [{ name: 'home' }];
+  });
   const [me, setMe] = useState<any>(null);
   const [error, setError] = useState('');
   const route = stack[stack.length - 1];
@@ -69,7 +78,7 @@ export function App() {
   useEffect(reloadMe, [reloadMe]);
 
   const open = useCallback((r: Route) => {
-    setStack((s) => (TAB_NAMES.has(r.name as TabName) ? [r] : [...s, r]));
+    setStack((s) => (TAB_NAMES.has(r.name as TabName) && !(r as any).tokenId ? [r] : [...s, r]));
     window.scrollTo(0, 0);
   }, []);
   const back = useCallback(() => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s)), []);
@@ -85,7 +94,7 @@ export function App() {
   if (!me) return <div className="app"><div className="loading"><div className="big gradtext">Bina Play</div></div></div>;
 
   const nav: Nav = { open, back, me, reloadMe };
-  const tabs = TABS.filter((t) => !t.admin || me.user.is_admin);
+  const tabs = TABS;
   const tabRoute = stack[0].name as TabName;
   const selected = Math.max(0, tabs.findIndex((t) => t.name === tabRoute));
   return (
@@ -96,6 +105,8 @@ export function App() {
         {route.name === 'shop' && <Shop nav={nav} />}
         {route.name === 'profile' && <Profile nav={nav} />}
         {route.name === 'admin' && <Admin nav={nav} />}
+        {route.name === 'trading' && <Trading key={'tr' + ((route as any).tokenId ?? '')} nav={nav} tokenId={(route as any).tokenId} />}
+        {route.name === 'send' && <Send nav={nav} tokenId={(route as any).tokenId} />}
         {route.name === 'token' && <Token key={route.id} id={route.id} nav={nav} />}
         {route.name === 'create' && <Create nav={nav} />}
         {route.name === 'top50' && <Top50 nav={nav} />}

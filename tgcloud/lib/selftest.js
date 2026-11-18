@@ -1,6 +1,7 @@
 // lib/selftest.js — проверка движка на настоящей базе платформы.
 // Запускается только служебной командой на пустой базе; после неё база очищается.
 import * as E from './engine.js';
+import * as P from './pool.js';
 
 const BC = E.UBC;
 function check(cond, msg) { if (!cond) throw new Error('SELFTEST: ' + msg); }
@@ -17,39 +18,24 @@ export async function selftest(db) {
   check((await E.wallet(db, 900004)).bc === start, 'start capital');
   step('стартовый капитал начислен');
 
-  const tok = await E.createToken(db, 900001, { ticker: 'SELF', name: 'Self test', supply: 1000, reserve: 400, p0: 2 * BC, ipoDurationS: 3600 }, 't1');
-  check(tok.phase === 'ipo', 'ipo phase');
-  await E.ipoBuy(db, 900002, tok.id, 500, 'i1');
-  await E.ipoBuy(db, 900003, tok.id, 100, 'i2');
-  check((await E.getToken(db, tok.id)).phase === 'listed', 'listed after sell-out');
-  step('IPO распродано, листинг открыт');
+  const tok = await E.createToken(db, 900001, { ticker: 'SELF', name: 'Self test', supply: 1000, reserve: 400, p0: 2 * BC }, 't1');
+  const pool = await P.getPool(db, tok.id);
+  check(pool && pool.tokens === 600, 'pool created');
+  step('токен выпущен, 600 шт в пуле по стартовой цене 2 BC');
 
-  const s = await E.placeOrder(db, 900002, { tokenId: tok.id, side: 'sell', type: 'limit', price: 3 * BC, qty: 100, clientId: 's1' });
-  check(s.order.status === 'open', 'sell rests');
-  check((await E.getToken(db, tok.id)).last_price === 2 * BC, 'order does not move price');
-  const b = await E.placeOrder(db, 900003, { tokenId: tok.id, side: 'buy', type: 'limit', price: 3 * BC, qty: 40, clientId: 'b1' });
-  check(b.fills === 1 && b.order.status === 'filled', 'buy filled');
-  check((await E.getToken(db, tok.id)).last_price === 3 * BC, 'trade moves price');
-  const w3 = await E.wallet(db, 900003);
-  check(w3.bc === start + 10_000 * BC - 200 * BC - 120 * BC - 120 * BC * 20 / 10000, 'buyer balance ' + w3.bc);
-  step('встречные заявки исполнены, цена 2 → 3 BC только после сделки');
-
-  let selfTrade = false;
-  try { await E.placeOrder(db, 900002, { tokenId: tok.id, side: 'buy', type: 'limit', price: 3 * BC, qty: 1, clientId: 'b2' }); }
-  catch (e) { selfTrade = e.code === 'SELF_TRADE'; }
-  check(selfTrade, 'self trade blocked');
-  const replay = await E.placeOrder(db, 900003, { tokenId: tok.id, side: 'buy', type: 'limit', price: 3 * BC, qty: 40, clientId: 'b1' });
-  check(replay.replay === true, 'idempotent replay');
-  step('самоторговля запрещена, повтор запроса не исполняется');
-
-  const m = await E.placeOrder(db, 900003, { tokenId: tok.id, side: 'buy', type: 'market', qty: 100, clientId: 'm1' });
-  check(m.order.filled === 60 && m.order.status === 'cancelled', 'market partial ' + JSON.stringify(m.order));
-  step('рыночный ордер исполнил доступные 60 и отменил остаток');
+  const b1 = await P.swap(db, 900002, { tokenId: tok.id, side: 'buy', amount: 20 * BC, clientId: 'b1' });
+  const p1 = (await E.getToken(db, tok.id)).last_price;
+  check(b1.swap.qty > 0 && p1 > 2 * BC, 'buy moves price up');
+  const again = await P.swap(db, 900002, { tokenId: tok.id, side: 'buy', amount: 20 * BC, clientId: 'b1' });
+  check(again.replay === true, 'idempotent swap');
+  const s1 = await P.swap(db, 900002, { tokenId: tok.id, side: 'sell', amount: b1.swap.qty, clientId: 's1' });
+  const p2 = (await E.getToken(db, tok.id)).last_price;
+  check(s1.swap.bc <= b1.swap.bc && p2 < p1, 'sell moves price down, no free BC');
+  step(`покупка подняла цену до ${p1 / BC} BC, продажа вернула вниз; повтор не исполнился`);
 
   const c = await E.candles(db, tok.id, '1m', 3);
-  check(c.some((x) => !x.empty && x.v === 100), 'candle volume');
-  const book = await E.orderBook(db, tok.id);
-  step(`стакан: bid ${book.best_bid}, ask ${book.best_ask}; свечи посчитаны`);
+  check(c.some((x) => !x.empty && x.v > 0), 'candle volume');
+  step('свечи посчитаны');
 
   await E.creditStars(db, { chargeId: 'st1', userId: 900004, pack: 'p29', stars: 29, diamonds: 29 });
   await E.creditStars(db, { chargeId: 'st1', userId: 900004, pack: 'p29', stars: 29, diamonds: 29 });

@@ -183,3 +183,8 @@ button { cursor: pointer; }
 .kv { display: flex; justify-content: space-between; padding: 7px 0; font-size: 14px; gap: 10px; }
 .kv + .kv { border-top: 1px solid var(--line); }
 .danger-text { color: var(--down); }
+
+/* VIP: премиальный фон профиля */
+.vipbg { background: linear-gradient(135deg, rgba(245, 197, 66, .22), rgba(228, 95, 162, .18) 50%, rgba(124, 92, 255, .22)), var(--glass); }
+.vipbg::after { background: radial-gradient(circle, rgba(245, 197, 66, .45), transparent 70%); }
+.vipcard { background: linear-gradient(135deg, rgba(245, 197, 66, .25), rgba(228, 95, 162, .2)), var(--glass); }

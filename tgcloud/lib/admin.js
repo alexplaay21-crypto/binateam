@@ -4,7 +4,7 @@
 // в журнал выполняются одной командой.
 import * as E from './engine.js';
 import { SYS } from './sqlh.js';
-import { EDITABLE_SETTINGS } from './ddl2.js';
+import { EDITABLE_SETTINGS_3 as EDITABLE_SETTINGS } from './ddl3.js';
 
 const NOW = '(SELECT now FROM v_now)';
 
@@ -23,8 +23,8 @@ export async function admin(db, uid, input, { api } = {}) {
         g(`SELECT count(DISTINCT user_id) AS v FROM wallet_transactions WHERE user_id > 0 AND created_at > ${NOW} - 86400`),
         g('SELECT count(*) AS v FROM tokens'),
         g(`SELECT count(*) AS v FROM tokens WHERE phase = 'ipo'`),
-        g(`SELECT count(*) AS v FROM trades WHERE created_at > ${NOW} - 86400`),
-        g(`SELECT COALESCE(sum(notional), 0) AS v FROM trades WHERE created_at > ${NOW} - 86400`),
+        g(`SELECT count(*) AS v FROM deals WHERE created_at > ${NOW} - 86400`),
+        g(`SELECT COALESCE(sum(notional), 0) AS v FROM deals WHERE created_at > ${NOW} - 86400`),
         g(`SELECT COALESCE(sum(bc), 0) AS v FROM wallets WHERE user_id > 0`),
         g(`SELECT bc AS v FROM wallets WHERE user_id = ${SYS.FEES}`),
         g(`SELECT bc AS v FROM wallets WHERE user_id = ${SYS.BURN}`),
@@ -38,8 +38,8 @@ export async function admin(db, uid, input, { api } = {}) {
     case 'users': {
       const q = String(input.q ?? '').trim().replace(/^@/, '');
       const rows = await db.all(
-        `SELECT u.id, u.username, u.first_name, u.is_admin, u.is_banned, u.created_at, w.bc, w.bc_reserved, w.diamonds,
-                (SELECT count(*) FROM trades WHERE buyer_id = u.id OR seller_id = u.id) AS trades
+        `SELECT u.id, u.username, u.first_name, u.is_admin, u.is_banned, u.created_at, w.bc, w.bc_reserved, w.diamonds, u.vip_until > ${NOW} AS vip,
+                (SELECT count(*) FROM deals WHERE user_id = u.id) AS trades
          FROM users u JOIN wallets w ON w.user_id = u.id
          WHERE u.id > 0 AND (:q = '' OR CAST(u.id AS TEXT) = :q OR u.username LIKE :q || '%' OR u.first_name LIKE '%' || :q || '%')
          ORDER BY u.created_at DESC LIMIT 30 OFFSET :o`,
@@ -81,7 +81,8 @@ export async function admin(db, uid, input, { api } = {}) {
         `SELECT t.id, t.ticker, t.name, t.phase, t.last_price, t.p0, t.total_supply, t.is_official, t.is_verified, t.is_hidden,
                 t.logo_v, t.creator_id, t.ipo_remaining, t.ipo_ends_at, t.created_at, u.username AS creator_username,
                 (SELECT locked FROM token_holders WHERE token_id = t.id AND user_id = t.creator_id) AS creator_locked,
-                (SELECT count(*) FROM trades WHERE token_id = t.id) AS trades
+                (SELECT count(*) FROM deals WHERE token_id = t.id) AS trades,
+                t.trading_off, (SELECT real_bc FROM token_pools WHERE token_id = t.id) AS pool_bc, (SELECT tokens FROM token_pools WHERE token_id = t.id) AS pool_tokens
          FROM tokens t LEFT JOIN users u ON u.id = t.creator_id
          WHERE :q = '' OR t.ticker LIKE :q || '%' OR upper(t.name) LIKE '%' || :q || '%'
          ORDER BY t.id DESC LIMIT 30 OFFSET :o`,
@@ -127,8 +128,12 @@ export async function admin(db, uid, input, { api } = {}) {
       return { items: await db.all('SELECT l.*, u.username FROM admin_logs l LEFT JOIN users u ON u.id = l.admin_id ORDER BY l.id DESC LIMIT 50 OFFSET :o', { ':o': page * 50 }), page };
     }
     case 'rounds': {
-      return { items: await db.all(`SELECT r.*, t.ticker, (SELECT count(*) FROM predictions WHERE round_id = r.id) AS bets
-                                   FROM prediction_rounds r JOIN tokens t ON t.id = r.token_id ORDER BY r.id DESC LIMIT 50`) };
+      const [items, sum] = await Promise.all([
+        db.all(`SELECT p.*, u.username FROM trading_positions p LEFT JOIN users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 50`),
+        db.get(`SELECT count(*) AS n, COALESCE(sum(stake), 0) AS staked, COALESCE(sum(CASE WHEN status <> 'open' THEN payout - stake END), 0) AS players_profit
+                FROM trading_positions`),
+      ]);
+      return { items, sum };
     }
     case 'promos': {
       return { items: await db.all(`SELECT p.*, t.ticker, u.username FROM token_promotions p JOIN tokens t ON t.id = p.token_id

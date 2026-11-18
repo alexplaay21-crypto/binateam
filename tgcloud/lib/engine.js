@@ -5,6 +5,7 @@
 // триггеры из lib/ddl.js. Здесь — только выбор команды и разбор ошибок.
 
 import { MIGRATIONS, PREDICTION_DURATIONS, ROUND_STEP_S, SYS } from './ddl.js';
+import { CREATION_FEE_SQL, SYS3 } from './ddl3.js';
 
 export const UBC = 1_000_000; // микро-BC в 1 BC
 
@@ -21,6 +22,8 @@ const CONSTRAINT_HINTS = [
   [/diamonds/i, 'INSUFFICIENT_DIAMONDS'],
   [/reserved \+ locked|balance >= 0/i, 'INSUFFICIENT_TOKENS'],
   [/UNIQUE.*ticker/i, 'TICKER_TAKEN'],
+  [/length\(name\)/i, 'BAD_NAME'],
+  [/length\(description\)/i, 'BAD_DESCRIPTION'],
   [/UNIQUE.*op_id/i, 'DUPLICATE_OPERATION'],
   [/UNIQUE.*round_id/i, 'ALREADY_BET'],
 ];
@@ -74,16 +77,17 @@ export async function migrate(db) {
 // ---------- пользователи ----------
 // Регистрация при первом входе: стартовый капитал начисляет триггер,
 // первый бонус доступен через 3 часа.
-export async function ensureUser(db, tgUser, { admin = false } = {}) {
+export async function ensureUser(db, tgUser, { admin = false, ref = null } = {}) {
   const id = Number(tgUser?.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw new BinaError('BAD_USER');
   const u = await db.get('SELECT username, first_name, is_admin FROM users WHERE id = :id', { ':id': id });
   const username = tgUser.username ?? null, first = tgUser.first_name ?? null;
   if (!u) {
     await db.run(
-      `INSERT INTO users (id, username, first_name, is_admin, faucet_at, created_at)
-       VALUES (:id, :u, :f, :a, ${NOW}, ${NOW}) ON CONFLICT (id) DO NOTHING`,
-      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0 },
+      `INSERT INTO users (id, username, first_name, is_admin, faucet_at, created_at, referrer_id)
+       VALUES (:id, :u, :f, :a, ${NOW}, ${NOW}, (SELECT id FROM users WHERE id = :ref AND id > 0 AND id <> :id))
+       ON CONFLICT (id) DO NOTHING`,
+      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0, ':ref': Number.isSafeInteger(Number(ref)) ? Number(ref) : null },
     );
   } else if (u.username !== username || u.first_name !== first || (admin && !u.is_admin)) {
     await db.run(
@@ -105,7 +109,8 @@ export async function wallet(db, uid) {
 // ---------- бонус ----------
 export async function faucetStatus(db, uid) {
   const r = await db.get(
-    `SELECT u.faucet_at, s1.v AS period, s2.v AS maxp, s3.v AS amount, ${NOW} AS now
+    `SELECT u.faucet_at, s1.v AS period, s2.v AS maxp,
+            CASE WHEN u.vip_until > ${NOW} THEN (SELECT v FROM platform_settings WHERE k = 'faucet_amount_vip') ELSE s3.v END AS amount, ${NOW} AS now
      FROM users u, platform_settings s1, platform_settings s2, platform_settings s3
      WHERE u.id = :id AND s1.k = 'faucet_period_s' AND s2.k = 'faucet_max_periods' AND s3.k = 'faucet_amount'`,
     { ':id': uid },
@@ -113,13 +118,14 @@ export async function faucetStatus(db, uid) {
   if (!r) throw new BinaError('USER_NOT_FOUND');
   const periods = Math.min(r.maxp, Math.floor((r.now - r.faucet_at) / r.period));
   const nextAt = periods > 0 ? r.now : r.faucet_at + r.period;
-  return { available: periods * r.amount, periods, next_at: nextAt, now: r.now };
+  return { available: periods * r.amount, periods, next_at: nextAt, now: r.now, amount: r.amount, period: r.period };
 }
 
 export async function claimFaucet(db, uid, opId) {
   const res = await exec(db,
     `INSERT INTO faucet_claims (op_id, user_id, periods, amount, created_at)
-     SELECT :op, u.id, p.n, p.n * (SELECT v FROM platform_settings WHERE k = 'faucet_amount'), ${NOW}
+     SELECT :op, u.id, p.n, p.n * CASE WHEN u.vip_until > ${NOW} THEN (SELECT v FROM platform_settings WHERE k = 'faucet_amount_vip')
+                                      ELSE (SELECT v FROM platform_settings WHERE k = 'faucet_amount') END, ${NOW}
      FROM users u, (SELECT min((SELECT v FROM platform_settings WHERE k = 'faucet_max_periods'),
                               (${NOW} - faucet_at) / (SELECT v FROM platform_settings WHERE k = 'faucet_period_s')) AS n
                     FROM users WHERE id = :uid) p
@@ -138,42 +144,28 @@ export function normalizeTicker(t) {
 }
 
 export async function creationFee(db, uid) {
-  const r = await db.get(
-    `SELECT CASE WHEN u.tokens_created < (SELECT v FROM platform_settings WHERE k = 'free_tokens') THEN 0
-                 WHEN u.tokens_created < 5 THEN (SELECT v FROM platform_settings WHERE k = 'token_fee_mid')
-                 ELSE (SELECT v FROM platform_settings WHERE k = 'token_fee_high') END AS fee,
-            u.tokens_created AS n
-     FROM users u WHERE u.id = :id`,
-    { ':id': uid },
-  );
-  return r;
+  return db.get(`SELECT ${CREATION_FEE_SQL(':id')} AS fee, (SELECT tokens_created FROM users WHERE id = :id) AS n`, { ':id': uid });
 }
 
-// p0 — цена в µBC за токен; supply/reserve — штуки; ipoDurationS — секунды.
+// p0 — стартовая цена в µBC за токен; supply — выпуск; reserve — сколько создатель оставляет себе.
+// Остальное (supply − reserve) сразу уходит в пул ликвидности со стартовой ценой p0.
 export async function createToken(db, uid, p, opId, tickerDiamonds = 0, { official = false } = {}) {
   const ticker = normalizeTicker(p.ticker);
   const supply = Number(p.supply), reserve = Number(p.reserve), p0 = Number(p.p0);
-  const dur = Number(p.ipoDurationS ?? 86_400);
-  for (const v of [supply, reserve, p0, dur, tickerDiamonds]) {
+  for (const v of [supply, reserve, p0, tickerDiamonds]) {
     if (!Number.isSafeInteger(v) || v < 0) throw new BinaError('BAD_INPUT');
   }
   const op = `token:${uid}:${opId}`;
-  const ipoSupply = supply - reserve;
   await exec(db,
     `INSERT INTO tokens (op_id, ticker, name, description, creator_id, total_supply, creator_reserve, ipo_supply,
                          ipo_remaining, p0, phase, ipo_duration_s, ipo_ends_at, last_price,
-                         creation_diamonds, ticker_diamonds, is_official, created_at)
-     SELECT :op, :ticker, :name, :descr, :uid, :supply, :reserve, :ipo, :ipo, :p0,
-            CASE WHEN :ipo = 0 THEN 'listed' ELSE 'ipo' END, :dur, ${NOW} + :dur, :p0,
-            CASE WHEN u.tokens_created < (SELECT v FROM platform_settings WHERE k = 'free_tokens') THEN 0
-                 WHEN u.tokens_created < 5 THEN (SELECT v FROM platform_settings WHERE k = 'token_fee_mid')
-                 ELSE (SELECT v FROM platform_settings WHERE k = 'token_fee_high') END,
-            :td, :off, ${NOW}
-     FROM users u WHERE u.id = :uid
+                         creation_diamonds, ticker_diamonds, is_official, creator_keep, pool_tokens, created_at)
+     VALUES (:op, :ticker, :name, :descr, :uid, :supply, :supply, 0, 0, :p0, 'listed', 0, ${NOW}, :p0,
+             ${CREATION_FEE_SQL(':uid')}, :td, :off, :reserve, :supply - :reserve, ${NOW})
      ON CONFLICT (op_id) DO NOTHING`,
     {
       ':op': op, ':ticker': ticker, ':name': String(p.name ?? '').trim(), ':descr': String(p.description ?? '').trim(),
-      ':uid': uid, ':supply': supply, ':reserve': reserve, ':ipo': ipoSupply, ':p0': p0, ':dur': dur, ':td': tickerDiamonds, ':off': official ? 1 : 0,
+      ':uid': uid, ':supply': supply, ':reserve': reserve, ':p0': p0, ':td': tickerDiamonds, ':off': official ? 1 : 0,
     },
   );
   const tok = await db.get('SELECT * FROM tokens WHERE op_id = :op', { ':op': op });
@@ -371,14 +363,15 @@ export async function candles(db, tokenId, tf = '1h', limit = 100) {
   const end = Math.floor(t.now / step) * step;
   const from = end - (limit - 1) * step;
   const rows = await db.all(
-    `SELECT (bucket / :step) * :step AS b,
-            (SELECT p.open FROM price_history p WHERE p.token_id = :t AND p.bucket >= (h.bucket / :step) * :step ORDER BY p.bucket ASC LIMIT 1) AS open,
+    // шаг подставляется числом (из TIMEFRAMES), чтобы деление было целочисленным
+    `SELECT (bucket / ${step}) * ${step} AS b,
+            (SELECT p.open FROM price_history p WHERE p.token_id = :t AND p.bucket >= (h.bucket / ${step}) * ${step} ORDER BY p.bucket ASC LIMIT 1) AS open,
             max(high) AS high, min(low) AS low,
-            (SELECT p.close FROM price_history p WHERE p.token_id = :t AND p.bucket < (h.bucket / :step) * :step + :step ORDER BY p.bucket DESC LIMIT 1) AS close,
+            (SELECT p.close FROM price_history p WHERE p.token_id = :t AND p.bucket < (h.bucket / ${step}) * ${step} + ${step} ORDER BY p.bucket DESC LIMIT 1) AS close,
             sum(volume) AS volume, sum(quote_volume) AS quote_volume, sum(trades) AS trades
      FROM price_history h WHERE token_id = :t AND bucket >= :from
      GROUP BY b ORDER BY b`,
-    { ':t': tokenId, ':step': step, ':from': from },
+    { ':t': tokenId, ':from': from },
   );
   const prev = await db.get(
     'SELECT close FROM price_history WHERE token_id = :t AND bucket < :from ORDER BY bucket DESC LIMIT 1',
@@ -547,9 +540,17 @@ export async function audit(db) {
     LEFT JOIN (SELECT user_id, sum(delta) AS s FROM diamonds_transactions GROUP BY user_id) j ON j.user_id = w.user_id
     WHERE w.diamonds <> COALESCE(j.s, 0)`);
   await q('token_supply', `
-    SELECT t.id, t.total_supply, COALESCE(h.s, 0) + t.ipo_remaining AS accounted FROM tokens t
+    SELECT t.id, t.total_supply, COALESCE(h.s, 0) + t.ipo_remaining + COALESCE(p.tokens, 0) AS accounted FROM tokens t
     LEFT JOIN (SELECT token_id, sum(balance) AS s FROM token_holders GROUP BY token_id) h ON h.token_id = t.id
-    WHERE COALESCE(h.s, 0) + t.ipo_remaining <> t.total_supply`);
+    LEFT JOIN token_pools p ON p.token_id = t.id
+    WHERE COALESCE(h.s, 0) + t.ipo_remaining + COALESCE(p.tokens, 0) <> t.total_supply`);
+  await q('amm_matches_pools', `
+    SELECT (SELECT bc FROM wallets WHERE user_id = ${SYS3.AMM}) AS amm, COALESCE((SELECT sum(real_bc) FROM token_pools), 0) AS pools
+    WHERE COALESCE((SELECT bc FROM wallets WHERE user_id = ${SYS3.AMM}), 0) <> COALESCE((SELECT sum(real_bc) FROM token_pools), 0)`);
+  await q('trade_matches_open_positions', `
+    SELECT (SELECT bc FROM wallets WHERE user_id = ${SYS3.TRADE}) AS trade,
+           COALESCE((SELECT sum(stake) FROM trading_positions WHERE status = 'open'), 0) AS open
+    WHERE COALESCE((SELECT bc FROM wallets WHERE user_id = ${SYS3.TRADE}), 0) <> COALESCE((SELECT sum(stake) FROM trading_positions WHERE status = 'open'), 0)`);
   await q('bc_reserved_matches_orders', `
     SELECT w.user_id, w.bc_reserved, COALESCE(o.s, 0) AS orders FROM wallets w
     LEFT JOIN (SELECT user_id, sum(reserved_bc) AS s FROM orders WHERE status = 'open' AND side = 'buy' GROUP BY user_id) o

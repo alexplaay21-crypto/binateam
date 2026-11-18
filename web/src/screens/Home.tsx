@@ -33,8 +33,8 @@ export function Home({ nav }: { nav: Nav }) {
           <div className="stat"><div className="hint">Diamonds</div><b className="num">{qty(nav.me.wallet.diamonds)} 💎</b></div>
         </div>
         <div className="grid2" style={{ marginTop: 14 }}>
-          <button className="btn" onClick={() => nav.open({ name: 'market' })}>Торговать</button>
-          <button className="btn ghost" onClick={() => nav.open({ name: 'create' })}>Создать токен</button>
+          <button className="btn" onClick={() => nav.open({ name: 'market' })}>Купить токены</button>
+          <button className="btn ghost" onClick={() => nav.open({ name: 'trading' })}>📈 Трейдинг</button>
         </div>
       </div>
       <Faucet nav={nav} onDone={load} />

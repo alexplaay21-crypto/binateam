@@ -7,7 +7,7 @@ import { TokenName } from '../components/TokenRow';
 
 const SECTIONS = [
   ['stats', 'Обзор'], ['users', 'Пользователи'], ['tokens', 'Токены'], ['payments', 'Платежи'], ['shop', 'Магазин'],
-  ['settings', 'Настройки'], ['tx', 'Операции'], ['rounds', 'Прогнозы'], ['promos', 'Реклама'], ['logs', 'Журнал'],
+  ['settings', 'Настройки'], ['tx', 'Операции'], ['rounds', 'Трейдинг'], ['promos', 'Реклама'], ['logs', 'Журнал'],
 ];
 
 const adm = (action: string, extra: Record<string, unknown> = {}) => call('app_admin', { action, ...extra });
@@ -85,7 +85,7 @@ function Users({ open }: { open: (id: number) => void }) {
         <div className="list">{d.items.map((u: any) => (
           <button key={u.id} className="trow" onClick={() => open(u.id)}>
             <div className="grow">
-              <div className="name">{u.first_name || u.username || u.id} {u.is_admin ? <span className="badge accent">админ</span> : null}{u.is_banned ? <span className="badge danger-text">бан</span> : null}</div>
+              <div className="name">{u.first_name || u.username || u.id}{u.vip ? ' 👑' : ''} {u.is_admin ? <span className="badge accent">админ</span> : null}{u.is_banned ? <span className="badge danger-text">бан</span> : null}</div>
               <div className="sub">{u.username ? '@' + u.username + ' · ' : ''}ID {u.id} · {dateTime(u.created_at)}</div>
             </div>
             <div className="right num small"><div>{bc(u.bc)} BC</div><div className="hint">{u.diamonds} 💎 · {u.trades} сд.</div></div>
@@ -130,6 +130,9 @@ function UserCard({ id, close, nav }: { id: number; close: () => void; nav: Nav 
           {u.is_admin
             ? <button className="btn ghost sm" onClick={() => confirm('Снять права администратора?', () => act('remove_admin', { target: id }, reload))}>Снять админа</button>
             : <button className="btn ghost sm" onClick={() => confirm('Сделать администратором? Он получит полный доступ.', () => act('make_admin', { target: id }, reload))}>Сделать админом</button>}
+          {u.vip_until > Date.now() / 1000
+            ? <button className="btn ghost sm" onClick={() => confirm('Снять VIP?', () => act('vip_revoke', { target: id, reason: 'снятие VIP' }, reload))}>Снять VIP</button>
+            : <button className="btn ghost sm" onClick={() => act('vip_grant', { target: id, reason: 'выдача VIP' }, reload)}>Выдать VIP 👑</button>}
         </div>
       </div>
       <div className="card">
@@ -183,12 +186,14 @@ function Tokens({ nav }: { nav: Nav }) {
               <Logo id={t.id} ticker={t.ticker} v={t.logo_v} />
               <div className="grow" onClick={() => nav.open({ name: 'token', id: t.id })}>
                 <div className="name"><TokenName t={t} />{t.is_hidden ? <span className="badge danger-text">скрыт</span> : null}{t.phase === 'ipo' ? <span className="badge">IPO</span> : null}</div>
-                <div className="sub num">{bc(t.last_price)} BC · {qty(t.total_supply)} шт · {t.trades} сделок · {t.creator_username ? '@' + t.creator_username : t.creator_id}</div>
+                <div className="sub num">{bc(t.last_price)} BC · {t.trades} сделок · пул {t.pool_tokens != null ? `${qty(t.pool_tokens)} шт / ${bc(t.pool_bc)} BC` : 'нет'} · {t.creator_username ? '@' + t.creator_username : t.creator_id}</div>
               </div>
               <div className="chips" style={{ width: '100%' }}>
                 <button onClick={() => act(t.is_verified ? 'token_unverify' : 'token_verify', { target: t.id }, reload)}>{t.is_verified ? 'Снять ✓' : '✓ Подтвердить'}</button>
                 {t.phase === 'ipo' && <button onClick={() => confirm(`Открыть торги $${t.ticker} сейчас?`, () => act('token_list', { target: t.id, reason: 'досрочный листинг' }, reload))}>Открыть торги</button>}
                 {t.creator_locked > 0 && <button onClick={() => act('token_unlock', { target: t.id }, reload)}>Снять lock-up</button>}
+                {t.pool_tokens == null && <button onClick={() => { const v = prompt('Сколько токенов создателя положить в пул?'); const n = v ? parseInt10(v) : null; if (n) act('token_pool', { target: t.id, value: n, reason: 'создание пула' }, reload); }}>Создать пул</button>}
+                {t.pool_tokens != null && <button onClick={() => act(t.trading_off ? 'token_trading_on' : 'token_trading_off', { target: t.id }, reload)}>{t.trading_off ? 'Вкл. трейдинг' : 'Выкл. трейдинг'}</button>}
                 {t.logo_v > 0 && <button onClick={() => act('token_logo_remove', { target: t.id }, reload)}>Удалить фото</button>}
                 <button onClick={() => act(t.is_hidden ? 'token_unhide' : 'token_hide', { target: t.id }, reload)}>{t.is_hidden ? 'Показать' : 'Скрыть'}</button>
               </div>
@@ -201,11 +206,11 @@ function Tokens({ nav }: { nav: Nav }) {
 }
 
 function OfficialForm({ done }: { done: () => void }) {
-  const [f, setF] = useState({ ticker: '', name: '', description: '', supply: '100000', reserve: '50000', price: '1', dur: '86400' });
+  const [f, setF] = useState({ ticker: '', name: '', description: '', supply: '100000', reserve: '50000', price: '1' });
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
     try {
-      await adm('create_official', { ticker: f.ticker.toUpperCase(), name: f.name, description: f.description, supply: parseInt10(f.supply), reserve: parseInt10(f.reserve), p0: parseBC(f.price), ipoDurationS: Number(f.dur), clientId: clientId() });
+      await adm('create_official', { ticker: f.ticker.toUpperCase(), name: f.name, description: f.description, supply: parseInt10(f.supply), reserve: parseInt10(f.reserve), p0: parseBC(f.price), clientId: clientId() });
       haptic('success'); done();
     } catch (e) { notify(errorText(e)); }
   };
@@ -216,9 +221,9 @@ function OfficialForm({ done }: { done: () => void }) {
         <div className="field"><div className="input"><input placeholder="Тикер" value={f.ticker} onChange={set('ticker')} /></div></div>
         <div className="field"><div className="input"><input placeholder="Название" value={f.name} onChange={set('name')} /></div></div>
         <div className="field"><label>Выпуск</label><div className="input"><input value={f.supply} onChange={set('supply')} /></div></div>
-        <div className="field"><label>Резерв</label><div className="input"><input value={f.reserve} onChange={set('reserve')} /></div></div>
+        <div className="field"><label>Себе (остальное — в пул)</label><div className="input"><input value={f.reserve} onChange={set('reserve')} /></div></div>
         <div className="field"><label>Цена, BC</label><div className="input"><input value={f.price} onChange={set('price')} /></div></div>
-        <div className="field"><label>IPO, сек</label><div className="input"><input value={f.dur} onChange={set('dur')} /></div></div>
+
       </div>
       <div className="field"><div className="input"><input placeholder="Описание" value={f.description} onChange={set('description')} /></div></div>
       <button className="btn" onClick={submit}>Выпустить</button>
@@ -278,6 +283,13 @@ const SETTING_LABELS: Record<string, [string, 'bps' | 'ubc' | 'int' | 's' | 'boo
   pred_min_trades: ['Прогнозы: мин. сделок/час', 'int'], pred_min_traders: ['Прогнозы: мин. игроков/час', 'int'], pred_max_volume_bps: ['Ставка от объёма 24 ч', 'bps'],
   min_bet_ubc: ['Мин. ставка', 'ubc'], max_bet_ubc: ['Макс. ставка', 'ubc'], promo_min_diamonds: ['Мин. реклама, 💎', 'int'], promo_duration_s: ['Длительность рекламы', 's'],
   shop_bc_enabled: ['Продажа BC (1/0)', 'bool'],
+  faucet_amount_vip: ['Бонус VIP', 'ubc'], faucet_max_periods: ['Бонус копится, раз', 'int'], free_tokens_vip: ['Бесплатных токенов VIP', 'int'],
+  vip_price: ['Цена VIP, 💎', 'int'], amm_fee_bps: ['Комиссия пула', 'bps'], amm_max_impact_bps: ['Макс. сдвиг цены за сделку', 'bps'],
+  amm_min_ubc: ['Мин. сделка с пулом', 'ubc'], transfer_fee_bps: ['Комиссия перевода', 'bps'], transfer_min_age_s: ['Переводы с аккаунтов старше', 's'],
+  transfer_daily_limit_ubc: ['Лимит переводов в сутки', 'ubc'], ref_bonus_ubc: ['Бонус за друга', 'ubc'], ref_bonus_vip_diamonds: ['Бонус VIP за друга, 💎', 'int'],
+  ref_min_actions: ['Сделок друга для бонуса', 'int'], trading_enabled: ['Трейдинг включён (1/0)', 'bool'], trading_payout_bps: ['Выигрыш в трейдинге', 'bps'],
+  trading_min_stake_ubc: ['Мин. ставка трейдинга', 'ubc'], trading_max_stake_ubc: ['Макс. ставка трейдинга', 'ubc'], trading_max_open: ['Открытых сделок на игрока', 'int'],
+  trading_min_move_bps: ['Мин. сдвиг цены для итога', 'bps'], trading_min_liquidity_ubc: ['Мин. ликвидность токена', 'ubc'], trading_max_pool_bps: ['Ставка от пула, макс.', 'bps'],
 };
 function show(v: number, t: string) {
   if (t === 'bps') return (v / 100).toString().replace('.', ',') + '%';
@@ -336,10 +348,19 @@ function Tx({ open }: { open: (id: number) => void }) {
 function Rounds() {
   const { d } = useLoad(() => adm('rounds'));
   if (!d) return <div className="loading">Загрузка…</div>;
-  return <div className="card">{d.items.length === 0 ? <div className="empty">Раундов пока нет</div> : d.items.map((r: any) => (
-    <div key={r.id} className="kv num small"><span>${r.ticker} · {r.duration_s} с · {dateTime(r.starts_at)} · {r.bets} ставок</span>
-      <span>{r.status === 'open' ? 'идёт' : r.outcome === 'void' ? 'возврат' : r.outcome === 'up' ? '▲' : '▼'} · ▲{bc(r.up_pool)} ▼{bc(r.down_pool)}</span></div>
-  ))}</div>;
+  return (
+    <>
+      <div className="card grid3 num">
+        <div className="stat"><div className="hint">Сделок</div><b>{qty(d.sum.n)}</b></div>
+        <div className="stat"><div className="hint">Ставок на</div><b>{compact(d.sum.staked)} BC</b></div>
+        <div className="stat"><div className="hint">Игроки в плюсе на</div><b className={d.sum.players_profit > 0 ? 'down' : 'up'}>{bc(d.sum.players_profit)}</b></div>
+      </div>
+      <div className="card">{d.items.length === 0 ? <div className="empty">Сделок пока нет</div> : d.items.map((r: any) => (
+        <div key={r.id} className="kv num small"><span>{r.direction === 'up' ? '▲' : '▼'} ${r.asset} · {bc(r.stake)} BC · {r.username ? '@' + r.username : r.user_id} · {dateTime(r.entry_at)}</span>
+          <span className={r.status === 'won' ? 'up' : r.status === 'lost' ? 'down' : 'hint'}>{r.status === 'open' ? 'идёт' : r.status === 'won' ? 'выиграл' : r.status === 'lost' ? 'проиграл' : 'возврат'}</span></div>
+      ))}</div>
+    </>
+  );
 }
 
 function Promos() {

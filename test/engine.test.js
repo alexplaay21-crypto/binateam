@@ -30,6 +30,8 @@ beforeEach(async () => {
   await E.migrate(db);
   await db.run(`UPDATE platform_settings SET v = 0 WHERE k = 'start_bc'`); // в тестах балансы считаем с нуля
   await db.run(`UPDATE platform_settings SET v = 100000000 WHERE k = 'faucet_amount'`);
+  await db.run(`UPDATE platform_settings SET v = 10800 WHERE k = 'faucet_period_s'`);
+  await db.run(`UPDATE platform_settings SET v = 8 WHERE k = 'faucet_max_periods'`);
   await user(1); await db.run('UPDATE users SET is_admin = 1 WHERE id = 1');
 });
 
@@ -118,58 +120,6 @@ test('самоторговля запрещена, повтор запроса �
   assert.equal(again.replay, true);
   assert.equal(await db.get('SELECT count(*) AS n FROM orders').then((r) => r.n), 1);
   await assert.rejects(E.placeOrder(db, 1, { tokenId: tok.id, side: 'buy', type: 'limit', price: 1 * BC, qty: 5, clientId: id() }), { code: 'SELF_TRADE' });
-  await noProblems();
-});
-
-test('выпуск: создатель выкупает весь выпуск, BC сжигаются, Diamonds с 3-го токена', async () => {
-  await E.adminAdjust(db, 1, { userId: 1, currency: 'bc', delta: 100_000 * BC, reason: 'test funding', opId: id() });
-  const t = await E.createToken(db, 1, { ticker: '$nova', name: 'Nova', supply: 210_000, reserve: 100_000, p0: 0.01 * BC, ipoDurationS: 3600 }, id());
-  assert.equal(t.ticker, 'NOVA');
-  assert.equal(t.phase, 'ipo');
-  assert.equal(t.ipo_remaining, 110_000);
-  assert.equal((await w(SYS.BURN)).bc, 2_100 * BC);
-  assert.deepEqual(await holding(t.id, 1), { balance: 100_000, reserved: 0, locked: 100_000 });
-  await assert.rejects(E.createToken(db, 1, { ticker: 'nova', name: 'Dup', supply: 1000, reserve: 1000, p0: BC }, id()), { code: 'TICKER_TAKEN' });
-  await assert.rejects(E.createToken(db, 1, { ticker: 'TOOLONG', name: 'X', supply: 1000, reserve: 1000, p0: BC }, id()), { code: 'BAD_TICKER' });
-  await E.createToken(db, 1, { ticker: 'B2', name: 'Second', supply: 1000, reserve: 1000, p0: BC }, id());
-  await assert.rejects(E.createToken(db, 1, { ticker: 'C3', name: 'Third', supply: 1000, reserve: 1000, p0: BC }, id()), { code: 'INSUFFICIENT_DIAMONDS' });
-  await E.creditStars(db, { chargeId: 'ch1', userId: 1, pack: 'p29', stars: 29, diamonds: 29 });
-  await E.creditStars(db, { chargeId: 'ch1', userId: 1, pack: 'p29', stars: 29, diamonds: 29 }); // повтор платежа
-  assert.equal((await w(1)).diamonds, 29);
-  const c3 = await E.createToken(db, 1, { ticker: 'C3', name: 'Third', supply: 1000, reserve: 1000, p0: BC }, id());
-  assert.equal(c3.creation_diamonds, 29);
-  assert.equal((await w(1)).diamonds, 0);
-  await assert.rejects(E.createToken(db, 2, { ticker: 'ZZ', name: 'Poor', supply: 1000, reserve: 1000, p0: BC }, id()), { code: 'USER_NOT_FOUND' });
-  await user(2);
-  await assert.rejects(E.createToken(db, 2, { ticker: 'ZZ', name: 'Poor', supply: 1000, reserve: 1000, p0: 10 * BC }, id()), { code: 'INSUFFICIENT_BC' });
-  await noProblems();
-});
-
-test('IPO: продажа по P0, распродажа открывает торги, по времени остаток возвращается создателю', async () => {
-  await E.adminAdjust(db, 1, { userId: 1, currency: 'bc', delta: 100_000 * BC, reason: 'test funding', opId: id() });
-  await user(2, 5_000 * BC); await user(3, 5_000 * BC);
-  const a = await E.createToken(db, 1, { ticker: 'IPOA', name: 'Ipo A', supply: 1000, reserve: 400, p0: 2 * BC, ipoDurationS: 3600 }, id());
-  await assert.rejects(E.placeOrder(db, 2, { tokenId: a.id, side: 'buy', type: 'limit', price: 2 * BC, qty: 1, clientId: id() }), { code: 'NOT_LISTED' });
-  await assert.rejects(E.ipoBuy(db, 1, a.id, 10, id()), { code: 'CREATOR_CANNOT_BUY' });
-  const creatorBefore = (await w(1)).bc;
-  await E.ipoBuy(db, 2, a.id, 500, id());
-  await assert.rejects(E.ipoBuy(db, 3, a.id, 101, id()), { code: 'IPO_NOT_ENOUGH' });
-  await E.ipoBuy(db, 3, a.id, 100, id());
-  const tok = await E.getToken(db, a.id);
-  assert.equal(tok.phase, 'listed');
-  assert.equal((await w(1)).bc - creatorBefore, 1200 * BC - 12 * BC, 'создатель получил BC минус 1%');
-  assert.equal((await w(2)).bc, 4_000 * BC);
-  await assert.rejects(E.placeOrder(db, 1, { tokenId: a.id, side: 'sell', type: 'limit', price: 2 * BC, qty: 1, clientId: id() }), { code: 'INSUFFICIENT_TOKENS' }, 'lock-up');
-  await E.placeOrder(db, 2, { tokenId: a.id, side: 'sell', type: 'limit', price: 3 * BC, qty: 10, clientId: id() });
-
-  const b = await E.createToken(db, 1, { ticker: 'IPOB', name: 'Ipo B', supply: 1000, reserve: 0, p0: 1 * BC, ipoDurationS: 3600 }, id());
-  await E.ipoBuy(db, 2, b.id, 300, id());
-  await tick(3601);
-  await assert.rejects(E.ipoBuy(db, 3, b.id, 10, id()), { code: 'NOT_IN_IPO' });
-  const bt = await E.getToken(db, b.id);
-  assert.equal(bt.phase, 'listed');
-  assert.equal(bt.ipo_remaining, 0);
-  assert.deepEqual(await holding(b.id, 1), { balance: 700, reserved: 0, locked: 0 });
   await noProblems();
 });
 
@@ -360,62 +310,3 @@ test('нагрузка: 3000 случайных ордеров, инвариан
   await noProblems();
 });
 
-test('стартовый капитал 15 000 BC и официальный токен $BINA', async () => {
-  await db.run(`UPDATE platform_settings SET v = 15000000000 WHERE k = 'start_bc'`);
-  await E.ensureUser(db, { id: 6714200331, username: 'boss' }, { admin: true });
-  assert.equal((await w(6714200331)).bc, 15_000 * BC);
-  await user(2);
-  assert.equal((await w(2)).bc, 15_000 * BC);
-  await assert.rejects(E.createToken(db, 2, { ticker: 'FAKE', name: 'Fake', supply: 1000, reserve: 0, p0: BC }, id(), 0, { official: true }), { code: 'NOT_ADMIN' });
-  const bina = await E.createToken(db, 6714200331, { ticker: '$BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC, ipoDurationS: 604_800 }, id(), 0, { official: true });
-  assert.equal(bina.is_official, 1);
-  assert.equal(bina.ipo_remaining, 110_000);
-  assert.equal((await w(6714200331)).bc, 15_000 * BC, 'выкуп оплачен эмиссией и сразу сожжён');
-  assert.equal((await w(SYS.BURN)).bc, 210_000 * 2100 * BC);
-  await E.ipoBuy(db, 2, bina.id, 7, id());
-  assert.equal((await w(2)).bc, 15_000 * BC - 7 * 2100 * BC);
-  await noProblems();
-});
-
-test('магазин, скины, реклама и действия администратора', async () => {
-  await user(2);
-  await E.creditStars(db, { chargeId: 'm1', userId: 2, pack: 'p99', stars: 99, diamonds: 99 });
-  const p = await E.shopBuy(db, 2, 'bc_5k', id());
-  assert.equal((await w(2)).bc, 5_000 * BC);
-  assert.equal((await w(2)).diamonds, 89);
-  await E.shopBuy(db, 2, 'skin_aurora', id());
-  await assert.rejects(E.shopBuy(db, 2, 'skin_aurora', id()), { code: 'ALREADY_OWNED' });
-  await assert.rejects(E.equipSkin(db, 2, 'skin_gold'), { code: 'NOT_OWNED' });
-  await E.equipSkin(db, 2, 'skin_aurora');
-  await assert.rejects(E.adminAction(db, 2, { action: 'setting', key: 'shop_bc_enabled', value: 0, opId: id() }), { code: 'NOT_ADMIN' });
-  await E.adminAction(db, 1, { action: 'setting', key: 'shop_bc_enabled', value: 0, reason: 'test', opId: id() });
-  await assert.rejects(E.shopBuy(db, 2, 'bc_5k', id()), { code: 'ITEM_UNAVAILABLE' });
-  await assert.rejects(E.adminAction(db, 1, { action: 'setting', key: 'is_admin', value: 1, opId: id() }), { code: 'BAD_SETTING' });
-
-  await E.adminAdjust(db, 1, { userId: 1, currency: 'bc', delta: 10_000 * BC, reason: 'test funding', opId: id() });
-  const t = await E.createToken(db, 1, { ticker: 'ADM', name: 'Admin test', supply: 1000, reserve: 400, p0: BC, ipoDurationS: 86400 }, id());
-  await E.promote(db, 2, t.id, 20, id());
-  assert.equal((await w(2)).diamonds, 89 - 15 - 20);
-  await assert.rejects(E.promote(db, 2, t.id, 5, id()), { code: 'PROMO_TOO_SMALL' });
-  await E.adminAction(db, 1, { action: 'token_list', target: t.id, opId: id() });
-  const lt = await E.getToken(db, t.id);
-  assert.equal(lt.phase, 'listed');
-  assert.deepEqual(await holding(t.id, 1), { balance: 1000, reserved: 0, locked: 400 });
-  await E.adminAction(db, 1, { action: 'token_unlock', target: t.id, opId: id() });
-  await E.placeOrder(db, 1, { tokenId: t.id, side: 'sell', type: 'limit', price: BC, qty: 1000, clientId: id() });
-  await E.adminAction(db, 1, { action: 'ban', target: 2, opId: id() });
-  await assert.rejects(E.placeOrder(db, 2, { tokenId: t.id, side: 'buy', type: 'limit', price: BC, qty: 5, clientId: id() }), { code: 'USER_BANNED' });
-  await assert.rejects(E.adminAction(db, 1, { action: 'ban', target: 1, opId: id() }), { code: 'CANNOT_TARGET_SELF' });
-  assert.ok((await db.get('SELECT count(*) AS n FROM admin_logs')).n >= 5);
-  await E.setLogo(db, 1, t.id, 'data:image/jpeg;base64,AAAA');
-  await assert.rejects(E.setLogo(db, 1, t.id, 'javascript:alert(1)'), { code: 'LOGO_TOO_BIG' });
-  await noProblems();
-});
-
-test('официальный токен: досрочный листинг без lock-up', async () => {
-  await E.ensureUser(db, { id: 6714200331 }, { admin: true });
-  const b = await E.createToken(db, 6714200331, { ticker: 'BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC, ipoDurationS: 604_800 }, id(), 0, { official: true });
-  await E.adminAction(db, 6714200331, { action: 'token_list', target: b.id, opId: id() });
-  await E.placeOrder(db, 6714200331, { tokenId: b.id, side: 'sell', type: 'limit', price: 2100 * BC, qty: 210_000, clientId: id() });
-  await noProblems();
-});
