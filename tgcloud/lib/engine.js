@@ -384,10 +384,13 @@ export async function candles(db, tokenId, tf = '1h', limit = 100) {
     'SELECT close FROM price_history WHERE token_id = :t AND bucket < :from ORDER BY bucket DESC LIMIT 1',
     { ':t': tokenId, ':from': from },
   );
+  const tok = await db.get('SELECT p0, created_at FROM tokens WHERE id = :t', { ':t': tokenId });
   const byBucket = new Map(rows.map((r) => [r.b, r]));
   const out = [];
   let last = prev?.close ?? null;
   for (let b = from; b <= end; b += step) {
+    // До первой сделки цена — цена размещения (с момента выпуска токена).
+    if (last == null && tok && b + step > tok.created_at) last = tok.p0;
     const r = byBucket.get(b);
     if (r) {
       out.push({ t: b, o: r.open, h: r.high, l: r.low, c: r.close, v: r.volume, qv: r.quote_volume, n: r.trades });
@@ -480,6 +483,50 @@ export async function adminAdjust(db, adminId, { userId, currency, delta, reason
      VALUES (:op, :a, :u, :c, :d, :r, ${NOW}) ON CONFLICT (op_id) DO NOTHING`,
     { ':op': `adj:${adminId}:${opId}`, ':a': adminId, ':u': Number(userId), ':c': currency, ':d': Number(delta), ':r': String(reason ?? '') },
   );
+}
+
+// ---------- логотип ----------
+export async function setLogo(db, uid, tokenId, logo) {
+  const r = await exec(db,
+    `UPDATE tokens SET logo = :l, logo_v = logo_v + 1 WHERE id = :t AND creator_id = :u`,
+    { ':l': logo, ':t': Number(tokenId), ':u': uid });
+  if (r.rowsAffected === 0) throw new BinaError('NOT_OWNER');
+}
+
+// ---------- магазин и реклама ----------
+export async function shopBuy(db, uid, itemId, opId) {
+  const op = `shop:${uid}:${opId}`;
+  await exec(db,
+    `INSERT INTO shop_purchases (op_id, user_id, item_id, price, amount, created_at)
+     SELECT :op, :u, i.id, i.price, i.amount, ${NOW} FROM shop_items i WHERE i.id = :i
+     ON CONFLICT (op_id) DO NOTHING`,
+    { ':op': op, ':u': uid, ':i': String(itemId) });
+  const p = await db.get('SELECT * FROM shop_purchases WHERE op_id = :op', { ':op': op });
+  if (!p) throw new BinaError('ITEM_UNAVAILABLE');
+  return p;
+}
+
+export async function equipSkin(db, uid, itemId) {
+  await exec(db, 'UPDATE users SET skin = :s WHERE id = :u', { ':s': itemId ?? null, ':u': uid });
+}
+
+export async function promote(db, uid, tokenId, diamonds, opId) {
+  const op = `promo:${uid}:${opId}`;
+  await exec(db,
+    `INSERT INTO token_promotions (op_id, token_id, user_id, diamonds, starts_at, ends_at, created_at)
+     VALUES (:op, :t, :u, :d, ${NOW}, ${NOW} + (SELECT v FROM platform_settings WHERE k = 'promo_duration_s'), ${NOW})
+     ON CONFLICT (op_id) DO NOTHING`,
+    { ':op': op, ':t': Number(tokenId), ':u': uid, ':d': Number(diamonds) });
+  return db.get('SELECT * FROM token_promotions WHERE op_id = :op', { ':op': op });
+}
+
+// ---------- действия администратора ----------
+export async function adminAction(db, adminId, { action, target = null, key = null, value = null, reason = null, opId }) {
+  await exec(db,
+    `INSERT INTO admin_actions (op_id, admin_id, action, target, key, value, reason, created_at)
+     VALUES (:op, :a, :act, :t, :k, :v, :r, ${NOW}) ON CONFLICT (op_id) DO NOTHING`,
+    { ':op': `act:${adminId}:${opId}`, ':a': adminId, ':act': String(action), ':t': target == null ? null : Number(target),
+      ':k': key == null ? null : String(key), ':v': value == null ? null : Number(value), ':r': reason == null ? null : String(reason) });
 }
 
 // ---------- аудит ----------

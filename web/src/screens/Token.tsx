@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Nav } from '../App';
-import { call, clientId, errorText, haptic, notify } from '../tg';
+import { call, clientId, errorText, haptic, notify, tg } from '../tg';
 import { bc, compact, pct, changeClass, qty, time, duration, parseBC, parseInt10, toInput } from '../format';
 import { CandleChart, DepthChart } from '../components/Chart';
-import { Avatar } from '../components/TokenRow';
+import { Logo } from '../components/Logo';
+import { TokenName } from '../components/TokenRow';
+import { pickPhoto } from '../components/photo';
 
 const TFS = ['1m', '5m', '15m', '1h', '4h', '1d', '7d'];
 const REFRESH_MS = 15_000;
@@ -30,10 +32,11 @@ export function Token({ id, nav }: { id: number; nav: Nav }) {
   return (
     <>
       <div className="header">
-        <Avatar ticker={t.ticker} />
-        <div className="col" style={{ flex: 1 }}>
-          <div className="mid">${t.ticker} <span className="hint" style={{ fontSize: 15, fontWeight: 400 }}>{t.name}</span></div>
-          <div>{t.is_official ? <span className="badge official">Официальный токен платформы</span> : <span className="badge">Виртуальный токен Bina Play</span>}</div>
+        <Logo id={t.id} ticker={t.ticker} v={t.logo_v} size="lg" />
+        <div className="col" style={{ flex: 1, minWidth: 0 }}>
+          <div className="mid"><TokenName t={t} /></div>
+          <div className="hint">{t.name}</div>
+          <div><span className="badge">Виртуальный токен Bina Play</span>{t.promo > 0 && <span className="badge accent" style={{ marginLeft: 4 }}>в ТОП · {t.promo} 💎</span>}</div>
         </div>
       </div>
       <div className="card">
@@ -58,6 +61,9 @@ export function Token({ id, nav }: { id: number; nav: Nav }) {
       {t.phase === 'listed' && <Book d={d} onPick={(p) => setPickPrice(p)} />}
       {d.orders.length > 0 && <MyOrders d={d} after={after} />}
       {t.phase === 'listed' && <Predict d={d} nav={nav} after={after} />}
+      <Promote d={d} nav={nav} after={after} />
+      {t.creator_id === nav.me.user.id && <OwnerTools d={d} after={after} />}
+      {nav.me.user.is_admin && <AdminTools d={d} after={after} />}
       <div className="card">
         <h3>История сделок</h3>
         {d.trades.length ? <table className="tbl num"><tbody>
@@ -273,6 +279,67 @@ function Predict({ d, nav, after }: { d: any; nav: Nav; after: () => void }) {
       {active.length > 0 && <><div className="sep" />{active.map((b: any) => (
         <div key={b.id} className="row small num"><span>{b.direction === 'up' ? '▲' : '▼'} {bc(b.amount)} BC · {label(b.duration_s)}</span><span className="hint">итог через {Math.max(0, b.ends_at - now - skew)} с</span></div>
       ))}</>}
+    </div>
+  );
+}
+
+function Promote({ d, nav, after }: { d: any; nav: Nav; after: () => void }) {
+  const [amt, setAmt] = useState('10');
+  const [busy, setBusy] = useState(false);
+  const a = parseInt10(amt) ?? 0;
+  const go = async () => {
+    setBusy(true);
+    try {
+      await call('app_shop', { action: 'promote', tokenId: d.token.id, diamonds: a, clientId: clientId() });
+      haptic('success'); notify(`$${d.token.ticker} продвигается в ТОП на 24 часа`); after();
+    } catch (e) { haptic('error'); notify(errorText(e)); }
+    setBusy(false);
+  };
+  return (
+    <div className="card">
+      <h3 className="row">Продвинуть в ТОП-50 {d.token.promo > 0 && <span className="badge accent">сейчас {d.token.promo} 💎</span>}</h3>
+      <div className="hint small" style={{ marginBottom: 10 }}>Реклама на 24 часа. Чем больше 💎 вложено в токен (все рекламы суммируются), тем выше место. Минимум 10 💎. У вас {qty(nav.me.wallet.diamonds)} 💎.</div>
+      <div className="row">
+        <div className="input" style={{ flex: 1 }}><input inputMode="numeric" value={amt} onChange={(e) => setAmt(e.target.value)} /><span>💎</span></div>
+        <button className="btn sm" style={{ padding: '12px 16px' }} disabled={busy || a < 10} onClick={go}>Продвинуть</button>
+      </div>
+    </div>
+  );
+}
+
+function OwnerTools({ d, after }: { d: any; after: () => void }) {
+  const change = async () => {
+    const logo = await pickPhoto();
+    if (!logo) return;
+    try { await call('app_token_logo', { tokenId: d.token.id, logo }); haptic('success'); after(); } catch (e) { notify(errorText(e)); }
+  };
+  return (
+    <div className="card row">
+      <div className="col"><b>Вы создатель токена</b><span className="hint small">Можно сменить фото токена</span></div>
+      <button className="btn ghost sm" onClick={change}>Сменить фото</button>
+    </div>
+  );
+}
+
+function AdminTools({ d, after }: { d: any; after: () => void }) {
+  const t = d.token;
+  const act = (a: string, label: string) => {
+    const run = async () => {
+      try { await call('app_admin', { action: 'act', act: a, target: t.id, reason: label, clientId: clientId() }); haptic('success'); after(); } catch (e) { notify(errorText(e)); }
+    };
+    if (tg?.showConfirm) tg.showConfirm(`${label}: $${t.ticker}?`, (ok: boolean) => { if (ok) run(); });
+    else run();
+  };
+  return (
+    <div className="card">
+      <h3>Администратор</h3>
+      <div className="grid2">
+        <button className="btn ghost sm" onClick={() => act(t.is_verified ? 'token_unverify' : 'token_verify', t.is_verified ? 'Снять подтверждение' : 'Подтвердить')}>{t.is_verified ? 'Снять ✓' : 'Подтвердить ✓'}</button>
+        {t.phase === 'ipo' && <button className="btn ghost sm" onClick={() => act('token_list', 'Открыть торги сейчас')}>Открыть торги</button>}
+        <button className="btn ghost sm" onClick={() => act('token_unlock', 'Снять блокировку резерва')}>Снять lock-up</button>
+        {t.logo_v > 0 && <button className="btn ghost sm" onClick={() => act('token_logo_remove', 'Удалить фото')}>Удалить фото</button>}
+        <button className="btn danger sm" onClick={() => act(t.is_hidden ? 'token_unhide' : 'token_hide', t.is_hidden ? 'Показать токен' : 'Скрыть токен')}>{t.is_hidden ? 'Показать' : 'Скрыть'}</button>
+      </div>
     </div>
   );
 }

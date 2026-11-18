@@ -77,5 +77,6 @@ export const KIND_LABEL: Record<string, string> = {
   welcome: 'Стартовый капитал', faucet: 'Бонус', token_issue: 'Выпуск токена', ipo_buy: 'Покупка (IPO)',
   ipo_sale: 'Продажа (IPO)', trade_buy: 'Покупка', trade_sell: 'Продажа', fee_trade: 'Комиссия', fee_ipo: 'Комиссия IPO',
   bet: 'Прогноз', bet_win: 'Выигрыш прогноза', bet_refund: 'Возврат прогноза', admin_adjust: 'Корректировка',
-  stars_purchase: 'Покупка за Stars', stars_refund: 'Возврат Stars',
+  stars_purchase: 'Покупка за Stars', stars_refund: 'Возврат Stars', shop: 'Покупка в магазине', shop_bc: 'BC из магазина',
+  promo: 'Реклама в ТОП', official_issue: 'Официальный выпуск', emission: 'Эмиссия', fee_prediction: 'Комиссия прогнозов', burn: 'Сжигание',
 };

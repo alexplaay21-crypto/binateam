@@ -41,9 +41,9 @@ export function CandleChart({ candles, height = 220 }: { candles: any[]; height?
             </g>
           );
         })}
-        <line x1={0} x2={W - axis} y1={y(last)} y2={y(last)} stroke="var(--btn)" strokeWidth={0.6} strokeDasharray="3 3" />
-        <rect x={W - axis + 1} y={y(last) - 7} width={axis - 1} height={14} rx={3} fill="var(--btn)" />
-        <text x={W - axis + 4} y={y(last) + 3} style={{ fill: 'var(--btn-text)' }}>{bc(last)}</text>
+        <line x1={0} x2={W - axis} y1={y(last)} y2={y(last)} stroke="var(--accent)" strokeWidth={0.6} strokeDasharray="3 3" />
+        <rect x={W - axis + 1} y={y(last) - 7} width={axis - 1} height={14} rx={3} fill="var(--accent)" />
+        <text x={W - axis + 4} y={y(last) + 3} style={{ fill: 'var(--on-accent)' }}>{bc(last)}</text>
       </svg>
     </div>
   );

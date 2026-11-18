@@ -44,6 +44,16 @@ const MESSAGES: Record<string, string> = {
   USER_BANNED: 'Аккаунт заблокирован',
   CONSTRAINT: 'Операция отклонена проверкой баланса',
   NO_TELEGRAM: 'Откройте Bina Play внутри Telegram',
+  ITEM_UNAVAILABLE: 'Товар недоступен',
+  ALREADY_OWNED: 'Уже куплено',
+  NOT_OWNED: 'Сначала купите этот скин',
+  PROMO_TOO_SMALL: 'Минимальная реклама — 10 💎',
+  NOT_ADMIN: 'Нужны права администратора',
+  NOT_OWNER: 'Это может только создатель токена',
+  LOGO_TOO_BIG: 'Фото слишком большое или в неверном формате',
+  CANNOT_TARGET_SELF: 'Нельзя применить к себе',
+  BAD_SETTING: 'Эту настройку нельзя изменить',
+  PAYMENT_NOT_FOUND: 'Платёж не найден или уже возвращён',
 };
 
 export function errorText(e: any): string {

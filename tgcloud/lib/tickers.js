@@ -1,8 +1,8 @@
 // lib/tickers.js — оценка стоимости тикера в Diamonds (без случайности).
 // Цена = min(499, база по длине × редкость × популярность × спрос).
 
-export const TICKER_CAP = 499;
-const BASE = { 2: 249, 3: 99, 4: 29, 5: 0 };
+export const TICKER_CAP = 200;
+const BASE = { 2: 149, 3: 59, 4: 19, 5: 0 };
 
 // Широко известные обозначения: разрешены, но дороже.
 const POPULAR = new Set([

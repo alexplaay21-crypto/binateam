@@ -1,7 +1,7 @@
 // endpoints/ops.js — служебные команды для владельца проекта (только через CLI).
 import { db, api, EndpointError } from 'sdk';
 import { OPERATOR_ID, ADMIN_IDS, MINI_APP_URL } from '../lib/config.js';
-import { migrate, audit, ensureUser, createToken, UBC } from '../lib/engine.js';
+import { migrate, audit, ensureUser, createToken, adminAction, UBC } from '../lib/engine.js';
 import { selftest, ALL_TABLES } from '../lib/selftest.js';
 
 async function resetAll() {
@@ -32,6 +32,11 @@ export default async function (input, ctx) {
       await api.setChatMenuButton({ menu_button: { type: 'web_app', text: 'Bina Play', web_app: { url: MINI_APP_URL } } });
       await api.setMyDescription({ description: 'Bina Play — виртуальная биржа пользовательских токенов. Только виртуальная валюта, без вывода денег.' });
       return { ok: true };
+    case 'list_bina': {
+      const t = await db.get(`SELECT id FROM tokens WHERE ticker = 'BINA'`);
+      await adminAction(db, ADMIN_IDS[0], { action: 'token_list', target: t.id, reason: 'Открыть торги официальным токеном', opId: 'list-bina' });
+      return { ok: true };
+    }
     case 'create_bina': {
       const admin = ADMIN_IDS[0];
       await ensureUser(db, { id: admin }, { admin: true });

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Nav } from '../App';
 import { call, clientId, errorText, haptic, notify } from '../tg';
 import { bc, parseBC, parseInt10, qty, duration } from '../format';
+import { pickPhoto } from '../components/photo';
+import { Icon } from '../components/icons';
 
 const DURATIONS = [3600, 6 * 3600, 86400, 3 * 86400, 7 * 86400];
 
@@ -13,6 +15,7 @@ export function Create({ nav }: { nav: Nav }) {
   const [price, setPrice] = useState('0,01');
   const [reserve, setReserve] = useState('50000');
   const [dur, setDur] = useState(86400);
+  const [logo, setLogo] = useState<string | null>(null);
   const [quote, setQuote] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -48,7 +51,7 @@ export function Create({ nav }: { nav: Nav }) {
     try {
       const res = await call('app_create', {
         action: 'create', ticker: ticker.trim().toUpperCase(), name: name.trim(), description: desc.trim(),
-        supply: s, reserve: r, p0: p, ipoDurationS: dur, clientId: clientId(),
+        supply: s, reserve: r, p0: p, ipoDurationS: dur, logo, clientId: clientId(),
       });
       haptic('success');
       nav.reloadMe();
@@ -59,8 +62,15 @@ export function Create({ nav }: { nav: Nav }) {
 
   return (
     <>
+      <div className="title">Новый токен</div>
       <div className="card">
-        <h3>Новый токен</h3>
+        <div className="row" style={{ justifyContent: 'flex-start', gap: 14, marginBottom: 14 }}>
+          <button className="photo" onClick={async () => { const u = await pickPhoto(); if (u) setLogo(u); }}>
+            {logo ? <img src={logo} alt="" /> : <Icon name="photo" size={26} />}
+          </button>
+          <div className="col"><b>Фото токена</b><span className="hint small">{logo ? 'Нажмите, чтобы заменить' : 'Необязательно. Квадрат, обрежется по центру.'}</span>
+            {logo && <button className="btn ghost sm" style={{ marginTop: 6 }} onClick={() => setLogo(null)}>Убрать</button>}</div>
+        </div>
         <div className="field"><label>Тикер</label>
           <div className="input"><span style={{ margin: '0 4px 0 0' }}>$</span><input value={ticker} maxLength={5} placeholder="NOVA" onChange={(e) => setTicker(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())} /></div>
           {quote?.valid && !quote.taken && <span className="hint small">{quote.ticker_diamonds ? `Премиальный тикер: ${quote.ticker_diamonds} 💎 (${quote.factors.join(', ')})` : 'Обычный тикер — бесплатно'}</span>}

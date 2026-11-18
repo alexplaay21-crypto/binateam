@@ -221,9 +221,10 @@ test('свечи: только реальные сделки, пустые пе�
   const full = c.filter((x) => !x.empty);
   assert.equal(full.length, 1);
   assert.deepEqual([full[0].o, full[0].h, full[0].l, full[0].c, full[0].v], [1 * BC, 1.2 * BC, 1 * BC, 1.2 * BC, 7]);
-  const empty = c.filter((x) => x.empty);
+  const empty = c.filter((x) => x.empty && x.t > full[0].t);
   assert.ok(empty.length >= 2);
   for (const e of empty) assert.deepEqual([e.o, e.c, e.v], [1.2 * BC, 1.2 * BC, 0]);
+  for (const e of c.filter((x) => x.empty && x.t < full[0].t)) assert.equal(e.c, 1 * BC, 'до первой сделки — цена размещения');
 });
 
 test('бонус: 100 BC каждые 3 часа, копится до 24 часов', async () => {
@@ -373,5 +374,48 @@ test('стартовый капитал 15 000 BC и официальный то
   assert.equal((await w(SYS.BURN)).bc, 210_000 * 2100 * BC);
   await E.ipoBuy(db, 2, bina.id, 7, id());
   assert.equal((await w(2)).bc, 15_000 * BC - 7 * 2100 * BC);
+  await noProblems();
+});
+
+test('магазин, скины, реклама и действия администратора', async () => {
+  await user(2);
+  await E.creditStars(db, { chargeId: 'm1', userId: 2, pack: 'p99', stars: 99, diamonds: 99 });
+  const p = await E.shopBuy(db, 2, 'bc_5k', id());
+  assert.equal((await w(2)).bc, 5_000 * BC);
+  assert.equal((await w(2)).diamonds, 89);
+  await E.shopBuy(db, 2, 'skin_aurora', id());
+  await assert.rejects(E.shopBuy(db, 2, 'skin_aurora', id()), { code: 'ALREADY_OWNED' });
+  await assert.rejects(E.equipSkin(db, 2, 'skin_gold'), { code: 'NOT_OWNED' });
+  await E.equipSkin(db, 2, 'skin_aurora');
+  await assert.rejects(E.adminAction(db, 2, { action: 'setting', key: 'shop_bc_enabled', value: 0, opId: id() }), { code: 'NOT_ADMIN' });
+  await E.adminAction(db, 1, { action: 'setting', key: 'shop_bc_enabled', value: 0, reason: 'test', opId: id() });
+  await assert.rejects(E.shopBuy(db, 2, 'bc_5k', id()), { code: 'ITEM_UNAVAILABLE' });
+  await assert.rejects(E.adminAction(db, 1, { action: 'setting', key: 'is_admin', value: 1, opId: id() }), { code: 'BAD_SETTING' });
+
+  await E.adminAdjust(db, 1, { userId: 1, currency: 'bc', delta: 10_000 * BC, reason: 'test funding', opId: id() });
+  const t = await E.createToken(db, 1, { ticker: 'ADM', name: 'Admin test', supply: 1000, reserve: 400, p0: BC, ipoDurationS: 86400 }, id());
+  await E.promote(db, 2, t.id, 20, id());
+  assert.equal((await w(2)).diamonds, 89 - 15 - 20);
+  await assert.rejects(E.promote(db, 2, t.id, 5, id()), { code: 'PROMO_TOO_SMALL' });
+  await E.adminAction(db, 1, { action: 'token_list', target: t.id, opId: id() });
+  const lt = await E.getToken(db, t.id);
+  assert.equal(lt.phase, 'listed');
+  assert.deepEqual(await holding(t.id, 1), { balance: 1000, reserved: 0, locked: 400 });
+  await E.adminAction(db, 1, { action: 'token_unlock', target: t.id, opId: id() });
+  await E.placeOrder(db, 1, { tokenId: t.id, side: 'sell', type: 'limit', price: BC, qty: 1000, clientId: id() });
+  await E.adminAction(db, 1, { action: 'ban', target: 2, opId: id() });
+  await assert.rejects(E.placeOrder(db, 2, { tokenId: t.id, side: 'buy', type: 'limit', price: BC, qty: 5, clientId: id() }), { code: 'USER_BANNED' });
+  await assert.rejects(E.adminAction(db, 1, { action: 'ban', target: 1, opId: id() }), { code: 'CANNOT_TARGET_SELF' });
+  assert.ok((await db.get('SELECT count(*) AS n FROM admin_logs')).n >= 5);
+  await E.setLogo(db, 1, t.id, 'data:image/jpeg;base64,AAAA');
+  await assert.rejects(E.setLogo(db, 1, t.id, 'javascript:alert(1)'), { code: 'LOGO_TOO_BIG' });
+  await noProblems();
+});
+
+test('официальный токен: досрочный листинг без lock-up', async () => {
+  await E.ensureUser(db, { id: 6714200331 }, { admin: true });
+  const b = await E.createToken(db, 6714200331, { ticker: 'BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC, ipoDurationS: 604_800 }, id(), 0, { official: true });
+  await E.adminAction(db, 6714200331, { action: 'token_list', target: b.id, opId: id() });
+  await E.placeOrder(db, 6714200331, { tokenId: b.id, side: 'sell', type: 'limit', price: 2100 * BC, qty: 210_000, clientId: id() });
   await noProblems();
 });

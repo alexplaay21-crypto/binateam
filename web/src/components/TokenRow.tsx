@@ -1,22 +1,23 @@
 import { bc, pct, changeClass } from '../format';
+import { Logo, Sparkline } from './Logo';
+import { Verified } from './icons';
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#6366f1'];
-export function Avatar({ ticker }: { ticker: string }) {
-  let h = 0;
-  for (const ch of ticker) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return <div className="avatar" style={{ background: COLORS[h % COLORS.length] }}>{ticker.slice(0, 3)}</div>;
+export function TokenName({ t }: { t: any }) {
+  return <>${t.ticker}{t.is_verified ? <Verified /> : null}</>;
 }
 
-export function TokenRow({ t, onOpen }: { t: any; onOpen: (id: number) => void }) {
+export function TokenRow({ t, onOpen, rank, extra }: { t: any; onOpen: (id: number) => void; rank?: number; extra?: string }) {
   return (
     <button className="trow" onClick={() => onOpen(t.id)}>
-      <Avatar ticker={t.ticker} />
+      {rank != null && <span className="rank">{rank}</span>}
+      <Logo id={t.id} ticker={t.ticker} v={t.logo_v} />
       <div className="grow">
-        <div className="name">${t.ticker} {t.is_official ? <span className="badge official">официальный</span> : null}</div>
-        <div className="sub">{t.phase === 'ipo' ? `Первичная продажа · ${t.name}` : t.name}</div>
+        <div className="name"><TokenName t={t} />{t.promo > 0 && <span className="badge accent">реклама</span>}</div>
+        <div className="sub">{t.phase === 'ipo' ? 'Первичная продажа' : t.name}{extra ? ' · ' + extra : ''}</div>
       </div>
+      <Sparkline data={t.spark} up={t.change_bps >= 0} />
       <div className="right num">
-        <div>{bc(t.last_price)} BC</div>
+        <div style={{ fontWeight: 600 }}>{bc(t.last_price)}</div>
         <span className={'pill ' + changeClass(t.change_bps)}>{pct(t.change_bps)}</span>
       </div>
     </button>
