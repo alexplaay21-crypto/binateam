@@ -3,7 +3,7 @@ import { api, db } from 'sdk';
 import { APP_NAME, MINI_APP_URL, ADMIN_IDS, BOT_USERNAME } from '../lib/config.js';
 import { parsePayment } from '../lib/payments.js';
 import { creditStars, ensureUser } from '../lib/engine.js';
-import { WIDGET_HTML, widgetState } from '../lib/widget.js';
+import { WIDGET_HTML, widgetState, publicState } from '../lib/widget.js';
 
 export default async function (message) {
   const from = message.from;
@@ -36,7 +36,7 @@ export default async function (message) {
     const st = await widgetState(db, uid, tok?.id ?? null);
     await api.sendWidget({
       chat_id: message.chat.id, html: WIDGET_HTML, allow_queries: true, height: 360,
-      chat_data: JSON.stringify({ id: st.id ?? 0 }),
+      chat_data: JSON.stringify(await publicState(db, st.id)),
       caption: st.s?.t ? `Bina Trading · $${st.s.t}` : 'Bina Trading — пока нет токенов с достаточной ликвидностью',
     });
   }
