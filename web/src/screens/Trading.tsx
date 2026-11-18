@@ -10,10 +10,11 @@ const px = (x: number, scale: number) => bc(Math.floor(x / scale));
 
 function LiveChart({ points, open, scale }: { points: any[]; open: any[]; scale: number }) {
   const W = 360, H = 170;
-  if (points.length < 2) return <div className="empty" style={{ height: H }}>Цена пока не менялась — график появится после сделок</div>;
+  if (points.length < 2) return <div className="empty" style={{ height: H }}>Загрузка графика…</div>;
   const ps = points.map((p) => p.p);
   const lo = Math.min(...ps, ...open.map((o) => o.entry_price)), hi = Math.max(...ps, ...open.map((o) => o.entry_price));
-  const span = hi - lo || hi * 0.01 || 1;
+  const span = hi - lo || hi * 0.004 || 1;
+  const flat = hi === lo;
   // точки по порядку (несколько сделок в одну секунду не сливаются в черту)
   const x = (i: number) => (i / Math.max(1, points.length - 1)) * (W - 8) + 4;
   const y = (v: number) => H - 10 - ((v - lo) / span) * (H - 24);
@@ -34,6 +35,7 @@ function LiveChart({ points, open, scale }: { points: any[]; open: any[]; scale:
           </g>
         ))}
         <circle cx={x(points.length - 1)} cy={y(last.p)} r={3.5} fill={up ? 'var(--up)' : 'var(--down)'} />
+        {flat && <text x={W / 2} y={y(last.p) - 10} textAnchor="middle">сделок пока не было — цена стоит</text>}
       </svg>
     </div>
   );

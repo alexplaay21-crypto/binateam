@@ -83,7 +83,7 @@ export async function view(db, uid, { tokenId }) {
   const a = list.find((x) => x.id === Number(tokenId)) ?? list[0] ?? null;
   const st = await settings(db);
   const [pts, open, history, stats, w] = await Promise.all([
-    a ? points(db, a.id) : [],
+    a ? points(db, a.id, 86_400) : [],
     db.all(`SELECT * FROM trading_positions WHERE user_id = :u AND status = 'open' ORDER BY id DESC`, { ':u': uid }),
     db.all(`SELECT * FROM trading_positions WHERE user_id = :u AND status <> 'open' ORDER BY id DESC LIMIT 20`, { ':u': uid }),
     db.get(`SELECT count(*) AS n, COALESCE(sum(status = 'won'), 0) AS won, COALESCE(sum(status = 'lost'), 0) AS lost,
@@ -91,6 +91,11 @@ export async function view(db, uid, { tokenId }) {
     db.get('SELECT bc, bc_reserved FROM wallets WHERE user_id = :u', { ':u': uid }),
   ]);
   const now = (await db.get(`SELECT ${NOW} AS n`)).n;
+  // линия доходит до текущего момента: последняя точка — цена прямо сейчас
+  if (a) {
+    if (!pts.length) pts.push({ t: now - 3600, p: a.price_x });
+    pts.push({ t: now, p: a.price_x });
+  }
   return {
     assets: list, asset: a, points: pts, open, history, stats, wallet: w, now, scale: PRICE_X_SCALE,
     config: {
