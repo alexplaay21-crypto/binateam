@@ -28,6 +28,8 @@ async function listedToken(ticker = 'TST', { supply = 1000, p0 = 10 * BC, creato
 beforeEach(async () => {
   db = makeDb(); clock = 0; seq = 0;
   await E.migrate(db);
+  await db.run(`UPDATE platform_settings SET v = 0 WHERE k = 'start_bc'`); // в тестах балансы считаем с нуля
+  await db.run(`UPDATE platform_settings SET v = 100000000 WHERE k = 'faucet_amount'`);
   await user(1); await db.run('UPDATE users SET is_admin = 1 WHERE id = 1');
 });
 
@@ -226,6 +228,8 @@ test('свечи: только реальные сделки, пустые пе�
 
 test('бонус: 100 BC каждые 3 часа, копится до 24 часов', async () => {
   await user(7);
+  await assert.rejects(E.claimFaucet(db, 7, 'a0'), { code: 'FAUCET_NOT_READY' }, 'первый бонус через 3 часа');
+  await tick(3 * 3600);
   const r1 = await E.claimFaucet(db, 7, 'a');
   assert.equal(r1.amount, 100 * BC);
   await assert.rejects(E.claimFaucet(db, 7, 'b'), { code: 'FAUCET_NOT_READY' });
@@ -352,5 +356,22 @@ test('нагрузка: 3000 случайных ордеров, инвариан
   const trades = (await db.get('SELECT count(*) AS n FROM trades')).n;
   console.log(`    ${trades} сделок за ${Date.now() - t0} мс; отказы:`, errors);
   assert.ok(trades > 100);
+  await noProblems();
+});
+
+test('стартовый капитал 15 000 BC и официальный токен $BINA', async () => {
+  await db.run(`UPDATE platform_settings SET v = 15000000000 WHERE k = 'start_bc'`);
+  await E.ensureUser(db, { id: 6714200331, username: 'boss' }, { admin: true });
+  assert.equal((await w(6714200331)).bc, 15_000 * BC);
+  await user(2);
+  assert.equal((await w(2)).bc, 15_000 * BC);
+  await assert.rejects(E.createToken(db, 2, { ticker: 'FAKE', name: 'Fake', supply: 1000, reserve: 0, p0: BC }, id(), 0, { official: true }), { code: 'NOT_ADMIN' });
+  const bina = await E.createToken(db, 6714200331, { ticker: '$BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC, ipoDurationS: 604_800 }, id(), 0, { official: true });
+  assert.equal(bina.is_official, 1);
+  assert.equal(bina.ipo_remaining, 110_000);
+  assert.equal((await w(6714200331)).bc, 15_000 * BC, 'выкуп оплачен эмиссией и сразу сожжён');
+  assert.equal((await w(SYS.BURN)).bc, 210_000 * 2100 * BC);
+  await E.ipoBuy(db, 2, bina.id, 7, id());
+  assert.equal((await w(2)).bc, 15_000 * BC - 7 * 2100 * BC);
   await noProblems();
 });

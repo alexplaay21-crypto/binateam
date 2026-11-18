@@ -13,9 +13,9 @@ export async function selftest(db) {
   for (const n of [900001, 900002, 900003]) {
     await E.adminAdjust(db, 900001, { userId: n, currency: 'bc', delta: 10_000 * BC, reason: 'selftest', opId: 'f' + n });
   }
-  const f = await E.claimFaucet(db, 900004, 'x');
-  check(f.amount === 100 * BC, 'faucet');
-  step('бонус 100 BC начислен');
+  const start = (await E.settings(db)).start_bc;
+  check((await E.wallet(db, 900004)).bc === start, 'start capital');
+  step('стартовый капитал начислен');
 
   const tok = await E.createToken(db, 900001, { ticker: 'SELF', name: 'Self test', supply: 1000, reserve: 400, p0: 2 * BC, ipoDurationS: 3600 }, 't1');
   check(tok.phase === 'ipo', 'ipo phase');
@@ -31,7 +31,7 @@ export async function selftest(db) {
   check(b.fills === 1 && b.order.status === 'filled', 'buy filled');
   check((await E.getToken(db, tok.id)).last_price === 3 * BC, 'trade moves price');
   const w3 = await E.wallet(db, 900003);
-  check(w3.bc === 10_000 * BC - 200 * BC - 120 * BC - 120 * BC * 20 / 10000, 'buyer balance ' + w3.bc);
+  check(w3.bc === start + 10_000 * BC - 200 * BC - 120 * BC - 120 * BC * 20 / 10000, 'buyer balance ' + w3.bc);
   step('встречные заявки исполнены, цена 2 → 3 BC только после сделки');
 
   let selfTrade = false;

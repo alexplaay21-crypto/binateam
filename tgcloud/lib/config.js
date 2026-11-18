@@ -6,3 +6,9 @@
 export const OPERATOR_ID = 777000;
 
 export const APP_NAME = 'Bina Play';
+
+// Администраторы (Telegram ID).
+export const ADMIN_IDS = [6714200331];
+
+// Адрес Mini App на платформе.
+export const MINI_APP_URL = 'https://app9098990437.tgcloud.ai/';

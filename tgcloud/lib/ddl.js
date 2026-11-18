@@ -46,7 +46,8 @@ export const DEFAULT_SETTINGS = {
   maker_bps: 10,              // комиссия мейкера 0,1%
   ipo_fee_bps: 100,           // комиссия первичной продажи 1%
   pred_fee_bps: 500,          // комиссия прогнозов 5% от пула проигравших
-  faucet_amount: 100_000_000, // 100 BC
+  start_bc: 15_000_000_000,   // стартовый капитал 15 000 BC
+  faucet_amount: 1_000_000_000, // 1000 BC
   faucet_period_s: 10_800,    // каждые 3 часа
   faucet_max_periods: 8,      // копится максимум за 24 часа
   min_order_ubc: 1_000_000,   // минимальный ордер 1 BC
@@ -147,6 +148,7 @@ const schema = [
      last_trade_at INTEGER,
      creation_diamonds INTEGER NOT NULL DEFAULT 0 CHECK (creation_diamonds >= 0),
      ticker_diamonds INTEGER NOT NULL DEFAULT 0 CHECK (ticker_diamonds >= 0),
+     is_official INTEGER NOT NULL DEFAULT 0 CHECK (is_official IN (0, 1)),
      created_at INTEGER NOT NULL,
      CHECK (ipo_supply = total_supply - creator_reserve),
      CHECK (ipo_remaining >= 0 AND ipo_remaining <= ipo_supply)
@@ -340,6 +342,8 @@ const triggers = [
   // ---------- регистрация ----------
   `CREATE TRIGGER IF NOT EXISTS users_ai AFTER INSERT ON users BEGIN
      INSERT INTO wallets (user_id) VALUES (NEW.id);
+     ${post("'welcome:' || NEW.id", 'NEW.id', 'welcome', `CASE WHEN NEW.id > 0 THEN ${S('start_bc')} ELSE 0 END`)}
+     ${post("'welcome:' || NEW.id", SYS.EMISSION, 'emission', `CASE WHEN NEW.id > 0 THEN -${S('start_bc')} ELSE 0 END`)}
    END`,
 
   // ---------- бонус каждые 3 часа ----------
@@ -382,13 +386,18 @@ const triggers = [
                    WHEN tokens_created < 5 THEN ${S('token_fee_mid')}
                    ELSE ${S('token_fee_high')} END
        FROM users WHERE id = NEW.creator_id);
-     SELECT RAISE(ABORT, 'INSUFFICIENT_BC')
-       WHERE (SELECT bc - bc_reserved FROM wallets WHERE user_id = NEW.creator_id) < NEW.p0 * NEW.total_supply;
+     SELECT RAISE(ABORT, 'NOT_ADMIN')
+       WHERE NEW.is_official = 1 AND (SELECT is_admin FROM users WHERE id = NEW.creator_id) IS NOT 1;
+     SELECT RAISE(ABORT, 'INSUFFICIENT_BC') WHERE NEW.is_official = 0
+       AND (SELECT bc - bc_reserved FROM wallets WHERE user_id = NEW.creator_id) < NEW.p0 * NEW.total_supply;
      SELECT RAISE(ABORT, 'INSUFFICIENT_DIAMONDS')
        WHERE (SELECT diamonds FROM wallets WHERE user_id = NEW.creator_id) < NEW.creation_diamonds + NEW.ticker_diamonds;
    END`,
   `CREATE TRIGGER IF NOT EXISTS tokens_ai AFTER INSERT ON tokens BEGIN
-     ${post('NEW.op_id', 'NEW.creator_id', 'token_issue', '-(NEW.p0 * NEW.total_supply)', 'NEW.id')}
+     -- обычный токен оплачивает создатель; официальный токен платформы — счёт эмиссии.
+     -- В обоих случаях сумма сразу сжигается, в обращение BC не попадают.
+     ${post('NEW.op_id', 'NEW.creator_id', 'token_issue', 'CASE WHEN NEW.is_official = 1 THEN 0 ELSE -(NEW.p0 * NEW.total_supply) END', 'NEW.id')}
+     ${post('NEW.op_id', SYS.EMISSION, 'official_issue', 'CASE WHEN NEW.is_official = 1 THEN -(NEW.p0 * NEW.total_supply) ELSE 0 END', 'NEW.id')}
      ${post('NEW.op_id', SYS.BURN, 'burn', 'NEW.p0 * NEW.total_supply', 'NEW.id')}
      ${postDiamonds('NEW.op_id', 'NEW.creator_id', 'token_issue', '-(NEW.creation_diamonds + NEW.ticker_diamonds)', 'NEW.id')}
      UPDATE users SET tokens_created = tokens_created + 1 WHERE id = NEW.creator_id;
@@ -401,7 +410,7 @@ const triggers = [
      SELECT RAISE(ABORT, 'IMMUTABLE')
        WHERE NEW.total_supply <> OLD.total_supply OR NEW.creator_reserve <> OLD.creator_reserve
           OR NEW.ipo_supply <> OLD.ipo_supply OR NEW.p0 <> OLD.p0 OR NEW.creator_id <> OLD.creator_id
-          OR NEW.ticker <> OLD.ticker OR NEW.op_id <> OLD.op_id;
+          OR NEW.ticker <> OLD.ticker OR NEW.op_id <> OLD.op_id OR NEW.is_official <> OLD.is_official;
      SELECT RAISE(ABORT, 'BAD_PHASE') WHERE OLD.phase = 'listed' AND NEW.phase <> 'listed';
      SELECT RAISE(ABORT, 'IPO_NOT_FINISHED')
        WHERE OLD.phase = 'ipo' AND NEW.phase = 'listed' AND NEW.ipo_remaining > 0 AND ${NOW} < OLD.ipo_ends_at;

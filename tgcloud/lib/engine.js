@@ -72,15 +72,25 @@ export async function migrate(db) {
 }
 
 // ---------- пользователи ----------
-export async function ensureUser(db, tgUser) {
+// Регистрация при первом входе: стартовый капитал начисляет триггер,
+// первый бонус доступен через 3 часа.
+export async function ensureUser(db, tgUser, { admin = false } = {}) {
   const id = Number(tgUser?.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw new BinaError('BAD_USER');
-  await db.run(
-    `INSERT INTO users (id, username, first_name, faucet_at, created_at)
-     VALUES (:id, :u, :f, ${NOW} - (SELECT v FROM platform_settings WHERE k = 'faucet_period_s'), ${NOW})
-     ON CONFLICT (id) DO UPDATE SET username = excluded.username, first_name = excluded.first_name`,
-    { ':id': id, ':u': tgUser.username ?? null, ':f': tgUser.first_name ?? null },
-  );
+  const u = await db.get('SELECT username, first_name, is_admin FROM users WHERE id = :id', { ':id': id });
+  const username = tgUser.username ?? null, first = tgUser.first_name ?? null;
+  if (!u) {
+    await db.run(
+      `INSERT INTO users (id, username, first_name, is_admin, faucet_at, created_at)
+       VALUES (:id, :u, :f, :a, ${NOW}, ${NOW}) ON CONFLICT (id) DO NOTHING`,
+      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0 },
+    );
+  } else if (u.username !== username || u.first_name !== first || (admin && !u.is_admin)) {
+    await db.run(
+      'UPDATE users SET username = :u, first_name = :f, is_admin = max(is_admin, :a) WHERE id = :id',
+      { ':id': id, ':u': username, ':f': first, ':a': admin ? 1 : 0 },
+    );
+  }
   return id;
 }
 
@@ -140,7 +150,7 @@ export async function creationFee(db, uid) {
 }
 
 // p0 — цена в µBC за токен; supply/reserve — штуки; ipoDurationS — секунды.
-export async function createToken(db, uid, p, opId, tickerDiamonds = 0) {
+export async function createToken(db, uid, p, opId, tickerDiamonds = 0, { official = false } = {}) {
   const ticker = normalizeTicker(p.ticker);
   const supply = Number(p.supply), reserve = Number(p.reserve), p0 = Number(p.p0);
   const dur = Number(p.ipoDurationS ?? 86_400);
@@ -152,18 +162,18 @@ export async function createToken(db, uid, p, opId, tickerDiamonds = 0) {
   await exec(db,
     `INSERT INTO tokens (op_id, ticker, name, description, creator_id, total_supply, creator_reserve, ipo_supply,
                          ipo_remaining, p0, phase, ipo_duration_s, ipo_ends_at, last_price,
-                         creation_diamonds, ticker_diamonds, created_at)
+                         creation_diamonds, ticker_diamonds, is_official, created_at)
      SELECT :op, :ticker, :name, :descr, :uid, :supply, :reserve, :ipo, :ipo, :p0,
             CASE WHEN :ipo = 0 THEN 'listed' ELSE 'ipo' END, :dur, ${NOW} + :dur, :p0,
             CASE WHEN u.tokens_created < (SELECT v FROM platform_settings WHERE k = 'free_tokens') THEN 0
                  WHEN u.tokens_created < 5 THEN (SELECT v FROM platform_settings WHERE k = 'token_fee_mid')
                  ELSE (SELECT v FROM platform_settings WHERE k = 'token_fee_high') END,
-            :td, ${NOW}
+            :td, :off, ${NOW}
      FROM users u WHERE u.id = :uid
      ON CONFLICT (op_id) DO NOTHING`,
     {
       ':op': op, ':ticker': ticker, ':name': String(p.name ?? '').trim(), ':descr': String(p.description ?? '').trim(),
-      ':uid': uid, ':supply': supply, ':reserve': reserve, ':ipo': ipoSupply, ':p0': p0, ':dur': dur, ':td': tickerDiamonds,
+      ':uid': uid, ':supply': supply, ':reserve': reserve, ':ipo': ipoSupply, ':p0': p0, ':dur': dur, ':td': tickerDiamonds, ':off': official ? 1 : 0,
     },
   );
   const tok = await db.get('SELECT * FROM tokens WHERE op_id = :op', { ':op': op });
