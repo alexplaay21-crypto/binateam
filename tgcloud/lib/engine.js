@@ -550,8 +550,8 @@ export async function audit(db) {
     WHERE COALESCE((SELECT bc FROM wallets WHERE user_id = ${SYS3.AMM}), 0) <> COALESCE((SELECT sum(real_bc) FROM token_pools), 0)`);
   await q('trade_matches_open_positions', `
     SELECT (SELECT bc FROM wallets WHERE user_id = ${SYS3.TRADE}) AS trade,
-           COALESCE((SELECT sum(stake) FROM trading_positions WHERE status = 'open'), 0) AS open
-    WHERE COALESCE((SELECT bc FROM wallets WHERE user_id = ${SYS3.TRADE}), 0) <> COALESCE((SELECT sum(stake) FROM trading_positions WHERE status = 'open'), 0)`);
+           COALESCE((SELECT sum(stake) FROM bin_trades WHERE status = 'open'), 0) AS open
+    WHERE COALESCE((SELECT bc FROM wallets WHERE user_id = ${SYS3.TRADE}), 0) <> COALESCE((SELECT sum(stake) FROM bin_trades WHERE status = 'open'), 0)`);
   await q('bc_reserved_matches_orders', `
     SELECT w.user_id, w.bc_reserved, COALESCE(o.s, 0) AS orders FROM wallets w
     LEFT JOIN (SELECT user_id, sum(reserved_bc) AS s FROM orders WHERE status = 'open' AND side = 'buy' GROUP BY user_id) o

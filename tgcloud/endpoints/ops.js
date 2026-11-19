@@ -37,6 +37,12 @@ export default async function (input, ctx) {
         { command: 'help', description: 'Как работает трейдинг' },
       ] });
       return { ok: true };
+    case 'terminals': // диагностика автообновления терминалов (только чтение)
+      return {
+        now: (await db.get('SELECT now FROM v_now')).now,
+        rows: await db.all('SELECT msg, token_id, amt, dur, active_at, refreshed_at FROM terminals ORDER BY active_at DESC LIMIT 10'),
+        trades: await db.get(`SELECT count(*) AS n, COALESCE(sum(status = 'open'), 0) AS open FROM bin_trades`),
+      };
     case 'list_bina': {
       const t = await db.get(`SELECT id FROM tokens WHERE ticker = 'BINA'`);
       await adminAction(db, ADMIN_IDS[0], { action: 'token_list', target: t.id, reason: 'Открыть торги официальным токеном', opId: 'list-bina' });

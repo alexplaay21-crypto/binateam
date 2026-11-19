@@ -129,9 +129,9 @@ export async function admin(db, uid, input, { api } = {}) {
     }
     case 'rounds': {
       const [items, sum] = await Promise.all([
-        db.all(`SELECT p.*, u.username FROM trading_positions p LEFT JOIN users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 50`),
+        db.all(`SELECT p.*, u.username FROM bin_trades p LEFT JOIN users u ON u.id = p.user_id ORDER BY p.id DESC LIMIT 50`),
         db.get(`SELECT count(*) AS n, COALESCE(sum(stake), 0) AS staked, COALESCE(sum(CASE WHEN status <> 'open' THEN payout - stake END), 0) AS players_profit
-                FROM trading_positions`),
+                FROM bin_trades`),
       ]);
       return { items, sum };
     }

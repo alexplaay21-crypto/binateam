@@ -9,7 +9,7 @@ import { TFS } from './Token';
 import { useFlash } from '../components/Avatar';
 import { cache } from '../components/cache';
 
-const DUR_LABEL: Record<number, string> = { 30: '30 с', 60: '1 мин', 180: '3 мин', 300: '5 мин' };
+const DUR_LABEL: Record<number, string> = { 15: '15 с', 30: '30 с', 60: '1 мин', 180: '3 мин', 300: '5 мин' };
 const px = (x: number, scale: number) => bc(Math.floor(x / scale));
 
 export function Trading({ nav, tokenId }: { nav: Nav; tokenId?: number }) {

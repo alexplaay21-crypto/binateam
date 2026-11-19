@@ -36,7 +36,7 @@ var pts=S.k||[],n=pts.length,ln=$('ln');ln.setAttribute('stroke',S.c[0]=='-'?'#e
 ln.setAttribute('points',pts.map(function(v,i){return(n>1?i*100/(n-1):50)+','+(38-v*.36)}).join(' '));
 chips($('tks'),S.a||[],id,function(v){id=v;ask('r:'+id)});
 chips($('am'),[[10,'10'],[50,'50'],[100,'100'],[500,'500']],am,function(v){am=v;draw()});
-chips($('du'),[[30,'30с'],[60,'1м'],[180,'3м'],[300,'5м']],du,function(v){du=v;draw()});
+chips($('du'),[[15,'15с'],[30,'30с'],[60,'1м'],[300,'5м']],du,function(v){du=v;draw()});
 $('u').textContent='▲ BUY +'+S.y+'%';$('d').textContent='▼ SELL +'+S.y+'%';
 var o=$('o');o.innerHTML='';(S.o||[]).forEach(function(x){var d=document.createElement('div');
 d.innerHTML='<span>'+(x[0]=='u'?'▲':'▼')+' $'+x[1]+' '+x[2]+' BC</span><span class="'+(x[4]>0?'g':x[4]<0?'r':'m')+'">'+(x[3]>0?x[3]+' с':'итог…')+'</span>';o.appendChild(d)})}
@@ -83,7 +83,7 @@ export async function widgetState(db, uid, tokenId) {
   await TR.settleDue(db, { userId: uid, limit: 10 });
   const pub = await publicState(db, tokenId);
   const w = await db.get('SELECT bc - bc_reserved AS free FROM wallets WHERE user_id = :u', { ':u': uid });
-  const open = await db.all(`SELECT * FROM trading_positions WHERE user_id = :u AND status = 'open' ORDER BY id DESC LIMIT 3`, { ':u': uid });
+  const open = await db.all(`SELECT * FROM bin_trades WHERE user_id = :u AND status = 'open' ORDER BY id DESC LIMIT 3`, { ':u': uid });
   const now = (await db.get('SELECT now FROM v_now')).now;
   const cur = await db.get(`SELECT ${'CAST(CAST(virtual_bc + real_bc AS REAL) * 1000000.0 / tokens AS INTEGER)'} AS x FROM token_pools WHERE token_id = :t`, { ':t': pub.id });
   pub.s.b = fmt(w?.free ?? 0);

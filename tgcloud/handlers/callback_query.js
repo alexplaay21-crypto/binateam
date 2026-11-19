@@ -1,5 +1,5 @@
 // handlers/callback_query.js — кнопки терминала Bina Trading (rich message и старые карточки).
-//   is:<id>:<сумма>:<срок>       — выбрать сумму или срок
+//   is:<id>:<сумма>:<срок>       — выбрать срок (в старых карточках — и сумму)
 //   it:<id>:<u|d>:<сумма>:<срок>  — открыть сделку ▲/▼
 //   ir:<id>:<сумма>:<срок>       — обновить график и итоги
 // Подробности сделки нажавшему приходят эфемерным сообщением (видно только ему).
@@ -9,13 +9,14 @@ import { ADMIN_IDS } from '../lib/config.js';
 import { openPosition, settleDue } from '../lib/trading.js';
 import { WIDGET_ERRORS } from '../lib/widget.js';
 import { refreshInline, AMOUNTS, DURATIONS } from '../lib/inlinecard.js';
-import { refreshTerminal, ephemeralReply, msgKey } from '../lib/terminal.js';
+import { refreshTerminal, ephemeralReply, msgKey, autoRefreshSoon } from '../lib/terminal.js';
 import * as R from '../lib/rich.js';
 import { mmTick } from '../lib/mm.js';
 
 const okAmt = (a) => (AMOUNTS.includes(a) || (a > 0 && a <= 100_000) ? a : 100);
 const okDur = (d) => (DURATIONS.some(([x]) => x === d) ? d : 60);
 const durLabel = (s) => (s < 60 ? `${s} с` : `${s / 60} мин`);
+const okDurAny = (d) => ([15, 30, 60, 180, 300].includes(d) ? d : 60); // старые сообщения могут нести 3 мин
 const fmtBC = (ubc) => (ubc / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 const fmtPx = (x) => (x / 1e12).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
@@ -28,7 +29,7 @@ async function refresh(cbq, id, amt, dur) {
 async function myResults(uid, msg) {
   await settleDue(db, { userId: uid, limit: 10 });
   const rows = await db.all(
-    `SELECT direction, stake, status, payout, entry_price, exit_price, expires_at, asset FROM trading_positions
+    `SELECT direction, stake, status, payout, entry_price, exit_price, expires_at, asset FROM bin_trades
      WHERE user_id = :u AND (msg = :m OR :m IS NULL) ORDER BY id DESC LIMIT 5`, { ':u': uid, ':m': msg });
   const now = (await db.get('SELECT now FROM v_now')).now;
   const w = await db.get('SELECT bc - bc_reserved AS free FROM wallets WHERE user_id = :u', { ':u': uid });
@@ -55,6 +56,7 @@ export default async function (cbq) {
     const amt = okAmt(Number(parts[2])), dur = okDur(Number(parts[3]));
     await api.answerCallbackQuery({ callback_query_id: cbq.id, text: `Ставка ${amt} BC · ${durLabel(dur)}` });
     await refresh(cbq, id, amt, dur);
+    await autoRefreshSoon(db, api, InputFile);
     return;
   }
 
@@ -67,7 +69,7 @@ export default async function (cbq) {
     return;
   }
 
-  const dir = parts[2], amt = okAmt(Number(parts[3])), dur = okDur(Number(parts[4]));
+  const dir = parts[2], amt = okAmt(Number(parts[3])), dur = okDurAny(Number(parts[4]));
   let p = null, err = null;
   try {
     p = await openPosition(db, uid, {
@@ -77,11 +79,11 @@ export default async function (cbq) {
   } catch (e) { err = WIDGET_ERRORS[e?.code] ?? 'Не удалось открыть сделку'; }
   if (p) {
     const blocks = [
-      R.h(`${dir === 'u' ? '▲ BUY' : '▼ SELL'} · $${p.asset}`, 3),
+      R.h(`${dir === 'u' ? '🟢 BUY ▲' : '🔴 SELL ▼'} · $${p.asset}`, 3),
       R.table([['Ставка', 'Вход', 'Срок', 'Если угадаешь'],
         [R.b(`${amt} BC`), `${fmtPx(p.entry_price)} BC`, durLabel(dur), R.b(`+${fmtBC(p.payout_bps ? Math.floor(p.stake * p.payout_bps / 10000) : 0)} BC`)]],
         { align: ['center', 'center', 'center', 'center'], compact: true }),
-      R.p('Итог появится после окончания срока — нажми «🔄 Обновить».'),
+      R.p(`Итог появится в терминале через ${durLabel(dur)} — он обновляется сам.`),
     ];
     try { await ephemeralReply(api, cbq.id, blocks); await api.answerCallbackQuery({ callback_query_id: cbq.id, text: 'Сделка открыта' }); }
     catch { await api.answerCallbackQuery({ callback_query_id: cbq.id, text: `Сделка открыта: ${amt} BC на ${durLabel(dur)}`, show_alert: true }); }
@@ -89,4 +91,5 @@ export default async function (cbq) {
   } else {
     await api.answerCallbackQuery({ callback_query_id: cbq.id, text: err, show_alert: true });
   }
+  await autoRefreshSoon(db, api, InputFile);
 }

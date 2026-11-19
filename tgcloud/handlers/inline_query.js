@@ -4,7 +4,7 @@
 // разрешил только на тестовом сервере — когда откроет: INLINE_WIDGETS = true.
 import { api, db, InputFile } from 'sdk';
 import { WIDGET_HTML, publicState } from '../lib/widget.js';
-import { terminalState } from '../lib/terminal.js';
+import { terminalState, autoRefreshSoon } from '../lib/terminal.js';
 import { mmTick } from '../lib/mm.js';
 import * as R from '../lib/rich.js';
 
@@ -50,9 +50,10 @@ export default async function (q) {
     return {
       type: 'article', id: `r${t.id}-${amt}`,
       title: `$${t.ticker} · ${pub.s.p} BC (${pub.s.c})`,
-      description: `Терминал Bina Trading: график, ▲ BUY / ▼ SELL, +${pub.s.y}%`,
+      description: `Ставка ${amt} BC · 🟢 BUY / 🔴 SELL на 15 с – 5 мин, +${pub.s.y}%`,
       input_message_content: { rich_message: R.rich(blocks) },
     };
   }));
   await api.answerInlineQuery({ ...common, results, button: { text: 'Открыть Bina Play', start_parameter: 'inline' } });
+  await autoRefreshSoon(db, api, InputFile);
 }

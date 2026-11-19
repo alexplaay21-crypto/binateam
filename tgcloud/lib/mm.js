@@ -37,7 +37,7 @@ async function catchUp(db, st, m) {
   const r = await db.get(
     `SELECT ${NOW} AS now,
             COALESCE((SELECT max(created_at) FROM amm_swaps WHERE token_id = :t), 0) AS last_swap,
-            COALESCE((SELECT max(expires_at) FROM trading_positions WHERE token_id = :t AND status <> 'open'), 0) AS settled`,
+            COALESCE((SELECT max(expires_at) FROM bin_trades WHERE token_id = :t AND status <> 'open'), 0) AS settled`,
     { ':t': m.token_id });
   const from = Math.max(r.last_swap, r.settled, r.now - CATCHUP_WINDOW_S) + 1;
   const span = r.now - from;

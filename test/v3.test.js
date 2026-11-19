@@ -137,7 +137,7 @@ test('Bina Trading на игровом токене: +85%, проигрыш, в�
   await P.swap(db, 3, { tokenId: t.id, side: 'buy', amount: 300 * BC, clientId: id() });
   await tick(55);
   assert.equal(await TR.settleDue(db, {}), 2);
-  const g = (x) => db.get('SELECT status, payout FROM trading_positions WHERE id = :i', { ':i': x.id });
+  const g = (x) => db.get('SELECT status, payout FROM bin_trades WHERE id = :i', { ':i': x.id });
   assert.deepEqual(await g(up), { status: 'won', payout: 185 * BC });
   assert.deepEqual(await g(dn), { status: 'lost', payout: 0 });
   assert.equal((await w(20)).bc, 15_000 * BC + 85 * BC);
@@ -146,7 +146,7 @@ test('Bina Trading на игровом токене: +85%, проигрыш, в�
   await tick(31);
   await TR.settleDue(db, {});
   assert.deepEqual(await g(flat), { status: 'refund', payout: 50 * BC });
-  await assert.rejects(db.run(`UPDATE trading_positions SET status = 'won', payout = 1 WHERE id = ${dn.id}`), /POSITION_SETTLED/);
+  await assert.rejects(db.run(`UPDATE bin_trades SET status = 'won', payout = 1 WHERE id = ${dn.id}`), /POSITION_SETTLED/);
   await ok();
 });
 
@@ -220,7 +220,7 @@ test('маркет-мейкер: цена официального токена 
   const pos = await TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 100 * BC, durationS: 30, clientId: id() });
   for (let i = 0; i < 3; i++) { await tick(13); await MM.mmTick(db); }
   await TR.settleDue(db, {});
-  const r = await db.get('SELECT status FROM trading_positions WHERE id = :i', { ':i': pos.id });
+  const r = await db.get('SELECT status FROM bin_trades WHERE id = :i', { ':i': pos.id });
   assert.ok(['won', 'lost', 'refund'].includes(r.status));
   await ok();
 });
@@ -264,7 +264,7 @@ test('маркет-мейкер догоняет время простоя, ит
   await tick(20); await MM.mmTick(db);
   const pos = await TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 100 * BC, durationS: 30, clientId: id() });
   await tick(40); await MM.mmTick(db); await TR.settleDue(db, {});
-  const settled = await db.get('SELECT status, exit_price FROM trading_positions WHERE id = :i', { ':i': pos.id });
+  const settled = await db.get('SELECT status, exit_price FROM bin_trades WHERE id = :i', { ':i': pos.id });
   const n0 = (await db.get('SELECT count(*) AS n FROM amm_swaps')).n;
   await tick(2 * 3600); // никого не было два часа
   await MM.mmTick(db);
@@ -273,7 +273,7 @@ test('маркет-мейкер догоняет время простоя, ит
   const now = await E.now(db);
   const c = await E.candles(db, b.id, '5m', 12);
   assert.ok(c.filter((x) => !x.empty).length >= 10, 'последний час заполнен');
-  assert.deepEqual(await db.get('SELECT status, exit_price FROM trading_positions WHERE id = :i', { ':i': pos.id }), settled);
+  assert.deepEqual(await db.get('SELECT status, exit_price FROM bin_trades WHERE id = :i', { ':i': pos.id }), settled);
   // задним числом нельзя записать сделку раньше уже рассчитанного итога
   const r = await db.get('SELECT min(created_at) AS m FROM amm_swaps WHERE id > :n', { ':n': n0 });
   assert.ok(r.m > pos.expires_at, 'догон начинается после рассчитанного итога');

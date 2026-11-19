@@ -125,7 +125,7 @@ export async function token(db, uid, input) {
     db.get(`SELECT balance, reserved, CASE WHEN locked_until > ${NOW} THEN locked ELSE 0 END AS locked, locked_until
             FROM token_holders WHERE token_id = :t AND user_id = :u`, { ':t': tokenId, ':u': uid }),
     E.wallet(db, uid),
-    db.get(`SELECT count(*) AS n FROM trading_positions WHERE token_id = :t AND user_id = :u AND status = 'open'`, { ':t': tokenId, ':u': uid }),
+    db.get(`SELECT count(*) AS n FROM bin_trades WHERE token_id = :t AND user_id = :u AND status = 'open'`, { ':t': tokenId, ':u': uid }),
   ]);
   const vip = me.vip_until > t.now;
   let limits = null;

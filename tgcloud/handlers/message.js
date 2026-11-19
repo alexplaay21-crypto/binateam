@@ -6,7 +6,7 @@ import { APP_NAME, MINI_APP_URL, ADMIN_IDS, BOT_USERNAME } from '../lib/config.j
 import { parsePayment } from '../lib/payments.js';
 import { creditStars, ensureUser } from '../lib/engine.js';
 import { WIDGET_HTML, widgetState, publicState } from '../lib/widget.js';
-import { terminalState } from '../lib/terminal.js';
+import { terminalState, rememberTerminal, autoRefreshSoon } from '../lib/terminal.js';
 import { mmTick } from '../lib/mm.js';
 import * as R from '../lib/rich.js';
 
@@ -16,12 +16,12 @@ function startBlocks(isPrivate) {
     R.p(['Биржа ', R.b('игровых токенов'), ' в Telegram: покупай, продавай, создавай свои токены и угадывай, куда пойдёт цена.']),
     R.list([
       [R.b('Рынок'), ' — токены игроков, цена меняется с каждой сделкой'],
-      [R.b('Bina Trading'), ' — ▲ BUY или ▼ SELL на 30 с – 5 мин, +85% при успехе'],
+      [R.b('Bina Trading'), ' — 🟢 BUY или 🔴 SELL на 15 с – 5 мин, +85% при успехе'],
       [R.b('Свой токен'), ' — выпусти токен со своим тикером и фото'],
       [R.b('VIP 👑'), ' — без комиссий, бонус 1000 BC каждые 4 часа'],
     ]),
     R.details('Команды', [R.list([
-      [R.code('/trade'), ' — терминал трейдинга прямо в чате'],
+      [R.code('/trade BINA 500'), ' — терминал трейдинга прямо в чате (число — ставка)'],
       [R.code(`@${BOT_USERNAME} BINA 500`), ' — терминал в любом чате'],
       [R.code('/help'), ' — как считается выигрыш'],
     ])]),
@@ -34,8 +34,8 @@ function helpBlocks() {
   return [
     R.h('Как работает Bina Trading', 2),
     R.list([
-      'Выбери токен, сумму ставки и срок.',
-      ['Нажми ', R.b('▲ BUY'), ', если думаешь, что цена вырастет, или ', R.b('▼ SELL'), ' — если упадёт.'],
+      ['Ставка — числом в запросе: ', R.code(`@${BOT_USERNAME} BINA 500`), ' или ', R.code('/trade BINA 500'), '. Срок — кнопками 15с / 30с / 1м / 5м.'],
+      ['Нажми ', R.b('🟢 BUY'), ', если думаешь, что цена вырастет, или ', R.b('🔴 SELL'), ' — если упадёт.'],
       'Цена входа фиксируется в момент нажатия, итог — по цене в конце срока.',
     ]),
     R.p('Выигрыш:'),
@@ -91,7 +91,11 @@ export default async function (message) {
   if (name === 'trade') {
     const uid = await ensureUser(db, from, { admin });
     await mmTick(db).catch(() => {});
-    const ticker = text.split(/\s+/)[1]?.replace(/^\$/, '').toUpperCase();
+    const words = text.split(/\s+/).slice(1);
+    const isNum = (w) => /^\d+([.,]\d+)?$/.test(w);
+    const ticker = words.find((w) => !isNum(w))?.replace(/^\$/, '').toUpperCase();
+    const num = Math.floor(Number(String(words.find(isNum) ?? '').replace(',', '.')));
+    const amt = num > 0 ? Math.min(num, 100_000) : 100;
     const tok = ticker ? await db.get('SELECT id FROM tokens WHERE ticker = :t', { ':t': ticker }) : null;
     const st = await widgetState(db, uid, tok?.id ?? null);
     if (!st.id) { await R.sendRich(api, { chat_id: message.chat.id }, [R.p('Пока нет токенов для трейдинга.')]); return; }
@@ -107,7 +111,12 @@ export default async function (message) {
         console.warn('sendWidget refused:', e?.description ?? String(e));
       }
     }
-    const { blocks } = await terminalState(db, api, InputFile, st.id, null, { amt: 100, dur: 60 });
-    await R.sendRich(api, { chat_id: message.chat.id, ...(message.message_thread_id ? { message_thread_id: message.message_thread_id } : {}) }, blocks);
+    const { blocks } = await terminalState(db, api, InputFile, st.id, null, { amt, dur: 60 });
+    const sent = await R.sendRich(api, { chat_id: message.chat.id, ...(message.message_thread_id ? { message_thread_id: message.message_thread_id } : {}) }, blocks);
+    // терминал запоминается и дальше обновляется сам
+    if (sent?.message_id) {
+      await rememberTerminal(db, { msg: `c${message.chat.id}:${sent.message_id}`, tokenId: st.id, amt, dur: 60, chatId: message.chat.id, messageId: sent.message_id, refreshed: true });
+    }
+    await autoRefreshSoon(db, api, InputFile);
   }
 }
