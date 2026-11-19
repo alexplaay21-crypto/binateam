@@ -255,3 +255,28 @@ test('свободная продажа: платформа доплачивае
   await SO.transfer(db, 70, { to: 2, asset: 'bc', amount: 10 * BC, clientId: id() });
   await ok();
 });
+
+test('маркет-мейкер догоняет время простоя, итоги трейдинга не меняются задним числом', async () => {
+  const MM = await import('../tgcloud/lib/mm.js');
+  await E.ensureUser(db, { id: 6714200331 }, { admin: true });
+  const b = await E.createToken(db, 6714200331, { ticker: 'BINA', name: 'Bina', supply: 210_000, reserve: 100_000, p0: 2100 * BC }, id(), 0, { official: true });
+  await db.run(`INSERT INTO mm_state (token_id, anchor_price) VALUES (${b.id}, ${2100 * BC})`);
+  await tick(20); await MM.mmTick(db);
+  const pos = await TR.openPosition(db, 3, { tokenId: b.id, direction: 'up', stake: 100 * BC, durationS: 30, clientId: id() });
+  await tick(40); await MM.mmTick(db); await TR.settleDue(db, {});
+  const settled = await db.get('SELECT status, exit_price FROM trading_positions WHERE id = :i', { ':i': pos.id });
+  const n0 = (await db.get('SELECT count(*) AS n FROM amm_swaps')).n;
+  await tick(2 * 3600); // никого не было два часа
+  await MM.mmTick(db);
+  const n1 = (await db.get('SELECT count(*) AS n FROM amm_swaps')).n;
+  assert.ok(n1 - n0 >= 30, `догнал ${n1 - n0} сделок`);
+  const now = await E.now(db);
+  const c = await E.candles(db, b.id, '5m', 12);
+  assert.ok(c.filter((x) => !x.empty).length >= 10, 'последний час заполнен');
+  assert.deepEqual(await db.get('SELECT status, exit_price FROM trading_positions WHERE id = :i', { ':i': pos.id }), settled);
+  // задним числом нельзя записать сделку раньше уже рассчитанного итога
+  const r = await db.get('SELECT min(created_at) AS m FROM amm_swaps WHERE id > :n', { ':n': n0 });
+  assert.ok(r.m > pos.expires_at, 'догон начинается после рассчитанного итога');
+  assert.ok(now > 0);
+  await ok();
+});

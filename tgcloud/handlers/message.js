@@ -4,6 +4,7 @@ import { APP_NAME, MINI_APP_URL, ADMIN_IDS, BOT_USERNAME } from '../lib/config.j
 import { parsePayment } from '../lib/payments.js';
 import { creditStars, ensureUser } from '../lib/engine.js';
 import { WIDGET_HTML, widgetState, publicState } from '../lib/widget.js';
+import { mmTick } from '../lib/mm.js';
 
 export default async function (message) {
   const from = message.from;
@@ -31,6 +32,7 @@ export default async function (message) {
   }
   if (text.startsWith('/trade')) {
     const uid = await ensureUser(db, from, { admin });
+    await mmTick(db).catch(() => {});
     const ticker = text.split(/\s+/)[1]?.replace(/^\$/, '').toUpperCase();
     const tok = ticker ? await db.get('SELECT id FROM tokens WHERE ticker = :t', { ':t': ticker }) : null;
     const st = await widgetState(db, uid, tok?.id ?? null);

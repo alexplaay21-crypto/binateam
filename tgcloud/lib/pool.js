@@ -61,7 +61,7 @@ export async function quote(db, uid, { tokenId, side, amount }) {
 }
 
 // minOut — защита от проскальзывания: минимум токенов (покупка) или BC (продажа).
-export async function swap(db, uid, { tokenId, side, amount, minOut, clientId }) {
+export async function swap(db, uid, { tokenId, side, amount, minOut, clientId, at = null }) {
   if (!['buy', 'sell'].includes(side)) throw new BinaError('BAD_INPUT');
   if (!clientId || String(clientId).length > 64) throw new BinaError('BAD_INPUT');
   const op = `swap:${uid}:${clientId}`;
@@ -79,8 +79,8 @@ export async function swap(db, uid, { tokenId, side, amount, minOut, clientId })
     try {
       await db.run(
         `INSERT INTO amm_swaps (op_id, token_id, user_id, side, qty, bc, fee, price_before, price_after, pool_seq, created_at)
-         VALUES (:op, :t, :u, :s, :q, :bc, :f, :pb, :pa, :seq, ${NOW})`,
-        { ':op': op, ':t': Number(tokenId), ':u': uid, ':s': side, ':q': c.qty, ':bc': c.bc, ':f': c.fee, ':pb': c.priceBefore, ':pa': c.priceAfter, ':seq': pool.seq },
+         VALUES (:op, :t, :u, :s, :q, :bc, :f, :pb, :pa, :seq, COALESCE(:at, ${NOW}))`,
+        { ':op': op, ':t': Number(tokenId), ':u': uid, ':s': side, ':q': c.qty, ':bc': c.bc, ':f': c.fee, ':pb': c.priceBefore, ':pa': c.priceAfter, ':seq': pool.seq, ':at': at },
       );
     } catch (e) {
       const be = toBinaError(e);

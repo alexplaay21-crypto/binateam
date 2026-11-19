@@ -15,6 +15,7 @@ import { MIGRATION_4 } from './ddl4.js';
 import { MIGRATION_5 } from './ddl5.js';
 import { MIGRATION_6 } from './ddl6.js';
 import { MIGRATION_7 } from './ddl7.js';
+import { MIGRATION_8 } from './ddl8.js';
 
 export { SYS };
 
@@ -707,4 +708,5 @@ export const MIGRATIONS = [
   { id: 5, statements: MIGRATION_5 },
   { id: 6, statements: MIGRATION_6 },
   { id: 7, statements: MIGRATION_7 },
+  { id: 8, statements: MIGRATION_8 },
 ];

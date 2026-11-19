@@ -19,7 +19,7 @@ export async function assets(db) {
      ORDER BY t.is_verified DESC, p.real_bc DESC LIMIT 30`);
 }
 
-export async function openPosition(db, uid, { tokenId, direction, stake, durationS, clientId, source = 'app' }) {
+export async function openPosition(db, uid, { tokenId, direction, stake, durationS, clientId, source = 'app', msg = null }) {
   if (!['up', 'down'].includes(direction)) throw new BinaError('BAD_DIRECTION');
   if (!TRADING_DURATIONS.includes(Number(durationS))) throw new BinaError('BAD_DURATION');
   const s = Number(stake);
@@ -30,11 +30,11 @@ export async function openPosition(db, uid, { tokenId, direction, stake, duratio
   if (done) return done;
   await settleDue(db, { userId: uid, limit: 5 });
   const r = await db.run(
-    `INSERT INTO trading_positions (op_id, user_id, token_id, asset, direction, stake, payout_bps, duration_s, entry_price, entry_at, expires_at, source)
+    `INSERT INTO trading_positions (op_id, user_id, token_id, asset, direction, stake, payout_bps, duration_s, entry_price, entry_at, expires_at, source, msg)
      SELECT :op, :u, t.id, t.ticker, :d, :s, (SELECT v FROM platform_settings WHERE k = 'trading_payout_bps'), :dur,
-            ${PRICE_X('p.')}, ${NOW}, ${NOW} + :dur, :src
+            ${PRICE_X('p.')}, ${NOW}, ${NOW} + :dur, :src, :msg
      FROM tokens t JOIN token_pools p ON p.token_id = t.id WHERE t.id = :t`,
-    { ':op': op, ':u': uid, ':t': Number(tokenId), ':d': direction, ':s': s, ':dur': Number(durationS), ':src': source })
+    { ':op': op, ':u': uid, ':t': Number(tokenId), ':d': direction, ':s': s, ':dur': Number(durationS), ':src': source, ':msg': msg })
     .catch((e) => { throw toBinaError(e) ?? e; });
   if (!r.rowsAffected) throw new BinaError('ASSET_UNAVAILABLE');
   tryReferral(db, uid).catch(() => {});

@@ -35,7 +35,7 @@ export default async function (q) {
   if (!tokens.length) {
     return api.answerInlineQuery({ ...common, results: [], button: { text: 'Токен не найден — открыть Bina Play', start_parameter: 'inline' } });
   }
-  const amounts = amount ? [amount, amount] : [100, 500];
+  const amt = amount ?? 100, dur = 60;
   const states = await Promise.all(tokens.map((t) => publicState(db, t.id)));
   if (INLINE_WIDGETS) {
     return api.answerInlineQuery({ ...common, results: tokens.map((t, i) => ({
@@ -45,20 +45,20 @@ export default async function (q) {
   }
   const results = await Promise.all(tokens.map(async (t, i) => {
     const st = states[i].s;
-    const base = { reply_markup: keyboard(t, amounts) };
+    const base = { reply_markup: keyboard(t, amt, dur) };
     try {
       const fileId = await chartFileId(db, api, InputFile, t.id);
       return {
-        ...base, type: 'photo', id: `p${t.id}-${amounts.join('-')}`, photo_file_id: fileId,
-        title: `$${t.ticker} · ${st.p} BC`, description: `${st.c} за 30 мин · ▲/▼ +${st.y}%`,
-        caption: caption(t, st), parse_mode: 'HTML',
+        ...base, type: 'photo', id: `p${t.id}-${amt}`, photo_file_id: fileId,
+        title: `$${t.ticker} · ${st.p} BC`, description: `${st.c} за 30 мин · терминал Bina Trading: ▲ BUY / ▼ SELL, +${st.y}%`,
+        caption: caption(t, st, { amt, dur }), parse_mode: 'HTML',
       };
     } catch (e) {
       console.warn('chart upload failed', e?.description ?? String(e));
       return {
-        ...base, type: 'article', id: `c${t.id}-${amounts.join('-')}`, title: `$${t.ticker} · ${st.p} BC (${st.c})`,
+        ...base, type: 'article', id: `c${t.id}-${amt}`, title: `$${t.ticker} · ${st.p} BC (${st.c})`,
         description: `Bina Trading: ▲/▼, +${st.y}% при успехе`,
-        input_message_content: { message_text: caption(t, st), parse_mode: 'HTML' },
+        input_message_content: { message_text: caption(t, st, { amt, dur }), parse_mode: 'HTML' },
       };
     }
   }));
