@@ -31,6 +31,11 @@ export default async function (input, ctx) {
     case 'setup_bot':
       await api.setChatMenuButton({ menu_button: { type: 'web_app', text: 'Bina Play', web_app: { url: MINI_APP_URL } } });
       await api.setMyDescription({ description: 'Bina Play — виртуальная биржа пользовательских токенов. Только виртуальная валюта, без вывода денег.' });
+      await api.setMyCommands({ commands: [
+        { command: 'start', description: 'Открыть Bina Play' },
+        { command: 'trade', description: 'Терминал Bina Trading' },
+        { command: 'help', description: 'Как работает трейдинг' },
+      ] });
       return { ok: true };
     case 'list_bina': {
       const t = await db.get(`SELECT id FROM tokens WHERE ticker = 'BINA'`);

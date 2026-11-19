@@ -77,3 +77,19 @@
   остаётся через `editMessageMedia/Caption`.
 - Для новых сообщений — rich message; если отправка вернёт ошибку, запасной вариант —
   обычный `sendMessage` с `parse_mode: HTML` (без имитации новых блоков).
+
+## 5. Что сделано и проверено вживую (19.11.2026)
+
+| Возможность | Где | Проверка |
+|---|---|---|
+| Rich message: заголовки, абзацы, списки, таблицы, сворачиваемые блоки, цитата, формула LaTeX, разделитель, подвал, кнопки внутри сообщения, фото | `lib/rich.js`, `/start`, `/help`, оплата, терминал | `sendRichMessage` принят Telegram (отправлено в личку админу) |
+| Терминал Bina Trading как rich message | `lib/terminal.js`, `/trade`, инлайн `@binaiobot тикер` | `/trade` в личке — принят; инлайн — `InputRichMessageContent` |
+| Обновление терминала | `editMessageText(rich_message)` по `inline_message_id` или `chat_id+message_id` | старые фото-карточки обновляются прежним способом |
+| Эфемерные ответы на ▲/▼ и «Обновить» | `ephemeral_message_parameters.callback_query_id` | при ошибке — обычное всплывающее окно |
+| Запасной вариант | `sendMessage` + `parse_mode: HTML` + обычная клавиатура | срабатывает, только если rich message отклонён |
+| Команды в меню | `setMyCommands`: /start, /trade, /help | применено |
+
+**HTML-виджет `/trade`:** `sendWidget` в личку бота отвечает `INPUT_MEDIA_WIDGET_NOT_ALLOWED` даже для
+простейшего виджета — Telegram пока не разрешает виджеты этому боту в рабочей среде (в документации
+условие не описано; вероятно, поэтапное включение). Бот сначала пробует `sendWidget`, при отказе
+отправляет терминал rich message — когда Telegram разрешит, виджет заработает сам.

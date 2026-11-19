@@ -1,11 +1,12 @@
 // handlers/inline_query.js — @binaiobot <тикер> [сумма] в любом чате.
-// Например: «@binaiobot BINA 1000» — картинка графика $BINA и кнопки ▲/▼ на 1000 BC.
-// HTML-виджеты в инлайн-режиме Telegram пока показывает только на тестовом сервере,
-// поэтому здесь график картинкой. Когда Telegram откроет виджеты для всех: INLINE_WIDGETS = true.
+// Отправляет терминал Bina Trading как Rich Message (InputRichMessageContent): картинка
+// графика, таблица, кнопки внутри сообщения. HTML-виджеты в инлайн-режиме Telegram пока
+// разрешил только на тестовом сервере — когда откроет: INLINE_WIDGETS = true.
 import { api, db, InputFile } from 'sdk';
 import { WIDGET_HTML, publicState } from '../lib/widget.js';
-import { chartFileId, caption, keyboard } from '../lib/inlinecard.js';
+import { terminalState } from '../lib/terminal.js';
 import { mmTick } from '../lib/mm.js';
+import * as R from '../lib/rich.js';
 
 const INLINE_WIDGETS = false;
 
@@ -36,31 +37,22 @@ export default async function (q) {
     return api.answerInlineQuery({ ...common, results: [], button: { text: 'Токен не найден — открыть Bina Play', start_parameter: 'inline' } });
   }
   const amt = amount ?? 100, dur = 60;
-  const states = await Promise.all(tokens.map((t) => publicState(db, t.id)));
   if (INLINE_WIDGETS) {
+    const states = await Promise.all(tokens.map((t) => publicState(db, t.id)));
     return api.answerInlineQuery({ ...common, results: tokens.map((t, i) => ({
       type: 'article', id: 'w' + t.id, title: `$${t.ticker} · ${states[i].s.p} BC`, description: 'Виджет Bina Trading',
       input_message_content: { html: WIDGET_HTML, height: 360, allow_queries: true, chat_data: JSON.stringify(states[i]), caption: `Bina Trading · $${t.ticker}` },
     })) });
   }
-  const results = await Promise.all(tokens.map(async (t, i) => {
-    const st = states[i].s;
-    const base = { reply_markup: keyboard(t, amt, dur) };
-    try {
-      const fileId = await chartFileId(db, api, InputFile, t.id);
-      return {
-        ...base, type: 'photo', id: `p${t.id}-${amt}`, photo_file_id: fileId,
-        title: `$${t.ticker} · ${st.p} BC`, description: `${st.c} за 30 мин · терминал Bina Trading: ▲ BUY / ▼ SELL, +${st.y}%`,
-        caption: caption(t, st, { amt, dur }), parse_mode: 'HTML',
-      };
-    } catch (e) {
-      console.warn('chart upload failed', e?.description ?? String(e));
-      return {
-        ...base, type: 'article', id: `c${t.id}-${amt}`, title: `$${t.ticker} · ${st.p} BC (${st.c})`,
-        description: `Bina Trading: ▲/▼, +${st.y}% при успехе`,
-        input_message_content: { message_text: caption(t, st, { amt, dur }), parse_mode: 'HTML' },
-      };
-    }
+  const results = await Promise.all(tokens.map(async (t) => {
+    const { blocks } = await terminalState(db, api, InputFile, t.id, null, { amt, dur });
+    const pub = await publicState(db, t.id);
+    return {
+      type: 'article', id: `r${t.id}-${amt}`,
+      title: `$${t.ticker} · ${pub.s.p} BC (${pub.s.c})`,
+      description: `Терминал Bina Trading: график, ▲ BUY / ▼ SELL, +${pub.s.y}%`,
+      input_message_content: { rich_message: R.rich(blocks) },
+    };
   }));
   await api.answerInlineQuery({ ...common, results, button: { text: 'Открыть Bina Play', start_parameter: 'inline' } });
 }
